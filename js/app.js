@@ -182,6 +182,14 @@ async function blobToBase64(b) {
   for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
   return btoa(bin);
 }
+/* ---- usage log (kept on this device) ---- */
+const MODE_LABEL = { chat: '💬 Chat', code: '⌨️ Code', '3d': '🧊 3D', music: '🎹 Music', plan: '👥 Team', agent: '👥 Team', review: '👥 Team', final: '👥 Team' };
+function logUsage(mode, u = {}) {
+  const log = store.get('usageLog', []);
+  log.push({ t: Date.now(), mode, provider: u.provider || null, model: u.model || null, in: u.in || 0, out: u.out || 0, cost: typeof u.cost === 'number' ? u.cost : null });
+  store.set('usageLog', log.slice(-400));
+  if (current === 'usage') renderUsage();
+}
 async function callAI(mode, messages, { onText, signal, images, system: customSystem } = {}) {
   const system = customSystem || PROMPTS[mode]();
   const sample = await samplePromise;
@@ -195,6 +203,7 @@ async function callAI(mode, messages, { onText, signal, images, system: customSy
     try {
       const r = await sample(input, { modelTier: brain().tier[mode], cache: false, signal, onText, ...(pics ? { images: pics.slice(0, 4) } : {}) });
       setAiStatus(true);
+      logUsage(mode, { provider: 'claude', model: r.modelApplied || r.modelTierApplied || brain().tier[mode] });
       return r.text;
     } catch (e) {
       const err = new Error(e.message || e.code); err.code = e.code; err.text = e.text;
@@ -214,14 +223,19 @@ async function callAI(mode, messages, { onText, signal, images, system: customSy
     setAiStatus(false, r.status === 429 ? 'resting a moment · busy brain' : undefined); throw err;
   }
   setAiStatus(true);
-  const reader = r.body.getReader(), dec = new TextDecoder(); let text = '';
+  const reader = r.body.getReader(), dec = new TextDecoder(); let text = '', shown = '';
+  const hideUsage = t => t.replace(/\n?\[\[usage:[\s\S]*$/, '');
   try {
     for (;;) {
       const { value, done } = await reader.read(); if (done) break;
-      const delta = dec.decode(value, { stream: true }); if (!delta) continue;
-      text += delta; onText?.({ text, delta });
+      const chunk = dec.decode(value, { stream: true }); if (!chunk) continue;
+      text += chunk;
+      const vis = hideUsage(text), delta = vis.slice(shown.length);
+      if (delta) { shown = vis; onText?.({ text: vis, delta }); }
     }
-  } catch (e) { const err = new Error('stopped'); err.code = signal?.aborted ? 'cancelled' : 'upstream_error'; err.text = text; throw err; }
+  } catch (e) { const err = new Error('stopped'); err.code = signal?.aborted ? 'cancelled' : 'upstream_error'; err.text = hideUsage(text); throw err; }
+  const um = text.match(/\n?\[\[usage:(\{[\s\S]*\})\]\]\s*$/);
+  if (um) { try { logUsage(mode, JSON.parse(um[1])); } catch {} text = text.slice(0, um.index); }
   const m = text.match(/\n?\[\[error:([^\]]*)\]\]\s*$/);
   if (m) { const err = new Error(m[1]); err.code = 'upstream_error'; err.text = text.slice(0, m.index); throw err; }
   if (!text.trim()) { const err = new Error('empty'); err.code = 'empty_completion'; throw err; }
@@ -434,7 +448,7 @@ function loadModule(name) {
 }
 async function go(view) {
   if (!$('#view-' + view)) view = 'chat';
-  const order = ['chat', 'code', 'studio3d', 'music', 'test', 'phone', 'me'];
+  const order = ['chat', 'code', 'studio3d', 'music', 'test', 'phone', 'me', 'usage'];
   if (current && current !== view) $('.views').dataset.dir = order.indexOf(view) > order.indexOf(current) ? 'right' : 'left';
   current = view;
   $('.mode-switch').dataset.on = view === 'chat' || view === 'code' ? view : 'none';
@@ -443,6 +457,7 @@ async function go(view) {
   try { history.replaceState(null, '', '#' + view); } catch {}
   Avatar.poke();
   if (view === 'test') renderDevices();
+  if (view === 'usage') renderUsage(true);
   if (view === 'studio3d' || view === 'music') { const m = await loadModule(view); m?.onShow?.(); return m; }
   return null;
 }
@@ -1285,6 +1300,86 @@ function renderCards() {
   $$('#abilityCards .card').forEach(c => c.addEventListener('click', () => useAbility(abilities.find(a => a.id === c.dataset.ab))));
 }
 if (IN_CLAUDE) $('#phoneNote').textContent = 'Some phone tools (camera, microphone, location, vibration) only work when Shobot runs on its own website. They are marked below.';
+
+/* ---------------- USAGE PAGE ---------------- */
+const money = n => (n == null ? '–' : n > 0 && n < 0.001 ? '<$0.001' : n > 0 && n < 0.1 ? '$' + n.toFixed(3) : '$' + n.toFixed(2));
+const fmtTok = n => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n || 0));
+function nextReset(kind) {
+  const n = new Date();
+  if (kind === 'daily') return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() + 1));
+  if (kind === 'weekly') { const d = (8 - n.getUTCDay()) % 7 || 7; return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() + d)); }
+  if (kind === 'monthly') return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth() + 1, 1));
+  return null;
+}
+const PERIOD = { daily: 'Today', weekly: 'This week', monthly: 'This month' };
+let usageKey = null, usageFetchedAt = 0;
+async function renderUsage(refresh) {
+  const log = store.get('usageLog', []);
+  const now = Date.now(), day = 864e5;
+  const startOf = k => { const n = new Date(); if (k === 'day') return Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()); if (k === 'week') return Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() - ((n.getUTCDay() + 6) % 7)); return Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1); };
+  const sum = (from, f) => log.filter(e => e.t >= from).reduce((a, e) => a + (f(e) || 0), 0);
+  const count = from => log.filter(e => e.t >= from).length;
+
+  // Brain account numbers (OpenRouter only)
+  if (!IN_CLAUDE && (refresh || now - usageFetchedAt > 30000)) {
+    usageFetchedAt = now;
+    try { const r = await fetch('api/chat?usage=1', { cache: 'no-store' }); usageKey = await r.json(); } catch { usageKey = { provider: null, key: null }; }
+  }
+  const k = usageKey?.key;
+  const meter = $('#usageMeter'), fill = $('#umFill');
+  if (k) {
+    const lim = k.limit, rem = k.limit_remaining, period = k.limit_reset;
+    const used = lim != null && rem != null ? Math.max(0, lim - rem) : (period ? k['usage_' + period] : k.usage);
+    $('#umLabel').textContent = lim != null ? `${PERIOD[period] || 'Total'} · your limit` : 'Spent so far';
+    $('#umUsed').textContent = money(used);
+    $('#umOf').textContent = lim != null ? `of ${money(lim)}` : '';
+    const pct = lim ? Math.min(100, (used / lim) * 100) : 0;
+    requestAnimationFrame(() => { fill.style.width = (lim ? pct : 0) + '%'; });
+    fill.className = pct >= 90 ? 'full' : pct >= 60 ? 'warn' : '';
+    const rs = nextReset(period);
+    $('#umReset').textContent = rs ? `Resets ${rs.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : '';
+    const chats = log.filter(e => e.mode === 'chat' && e.cost > 0);
+    const avg = chats.length ? chats.reduce((a, e) => a + e.cost, 0) / chats.length : ({ fast: 0.0005, smart: 0.008, genius: 0.016 }[settings.brain] || 0.008);
+    $('#umLeft').textContent = rem != null ? (rem <= 0 ? '😴 Limit reached. Shobot rests until the reset.' : `About ${Math.max(0, Math.floor(rem / avg)).toLocaleString()} more chat questions left (${money(rem)})`) : '';
+    $('#usageTiles').innerHTML = [['Today', k.usage_daily], ['This week', k.usage_weekly], ['This month', k.usage_monthly], ['All time', k.usage]]
+      .map(([l, v], i) => `<div class="ut" style="--i:${i}"><small>${l}</small><b>${money(v)}</b><span>${((c) => c + (c === 1 ? ' request' : ' requests'))(count([startOf('day'), startOf('week'), startOf('month'), 0][i]))} on this device</span></div>`).join('');
+    $('#usageSub').textContent = `Brain: OpenRouter · key “${k.label || 'shobot'}”`;
+    $('#usageNote').textContent = 'Money numbers come from your OpenRouter key and include every device. The request list shows only this device.';
+  } else {
+    const label = IN_CLAUDE ? 'Claude page' : usageKey?.provider === 'gemini' ? 'Google Gemini (free)' : usageKey?.provider === 'gateway' ? 'Vercel AI Gateway' : 'Not set up';
+    $('#umLabel').textContent = 'Requests this week (this device)';
+    $('#umUsed').textContent = count(startOf('week')).toLocaleString();
+    $('#umOf').textContent = 'requests';
+    fill.style.width = '0%'; $('#umReset').textContent = ''; $('#umLeft').textContent = '';
+    $('#usageTiles').innerHTML = [['Today', startOf('day')], ['This week', startOf('week')], ['This month', startOf('month')], ['All time', 0]]
+      .map(([l, from], i) => `<div class="ut" style="--i:${i}"><small>${l}</small><b>${count(from)}</b><span>${fmtTok(sum(from, e => e.in + e.out))} tokens</span></div>`).join('');
+    $('#usageSub').textContent = `Brain: ${label}`;
+    $('#usageNote').textContent = IN_CLAUDE
+      ? 'On this Claude page, Shobot uses your own Claude plan. See your Claude usage in Claude’s settings.'
+      : usageKey?.provider === 'gemini' ? 'Gemini’s free plan has a daily limit that Google does not report here. If Shobot says it is resting, the limit is used up for now.'
+        : 'Add an OpenRouter key to see money and limits here.';
+  }
+
+  // Breakdown this week
+  const week = log.filter(e => e.t >= startOf('week'));
+  const groups = {};
+  week.forEach(e => { const g = MODE_LABEL[e.mode] || e.mode; groups[g] ??= { cost: 0, n: 0 }; groups[g].cost += e.cost || 0; groups[g].n++; });
+  const useCost = week.some(e => e.cost > 0);
+  const rows = Object.entries(groups).sort((a, b) => (useCost ? b[1].cost - a[1].cost : b[1].n - a[1].n));
+  const max = Math.max(1e-9, ...rows.map(([, v]) => (useCost ? v.cost : v.n)));
+  const colors = { '💬 Chat': '#19e3a0', '⌨️ Code': '#38bdf8', '🧊 3D': '#ffd21f', '🎹 Music': '#ff8a1f', '👥 Team': '#e21fd8' };
+  $('#usageBars').innerHTML = rows.length ? rows.map(([g, v]) => `<div class="ub"><span>${g}</span><div class="track"><i style="width:0;--c:${colors[g] || '#6c3cf0'}" data-w="${((useCost ? v.cost : v.n) / max) * 100}"></i></div><span class="val">${useCost ? money(v.cost) : v.n + '×'}</span></div>`).join('')
+    : '<p class="muted small">Nothing yet this week. Ask Shobot something!</p>';
+  requestAnimationFrame(() => $$('#usageBars i').forEach(i => (i.style.width = i.dataset.w + '%')));
+
+  // Recent list
+  const recent = log.slice(-15).reverse();
+  $('#usageList').innerHTML = recent.length ? recent.map(e => `<li><span>${(MODE_LABEL[e.mode] || e.mode).split(' ')[0]}</span><span>${esc((MODE_LABEL[e.mode] || e.mode).split(' ').slice(1).join(' ') || e.mode)}<small>${esc(String(e.model || '').replace(/^.*\//, '') || '')}${e.in || e.out ? ' · ' + fmtTok(e.in + e.out) + ' tokens' : ''} · ${new Date(e.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></span><span class="cost">${e.cost != null ? money(e.cost) : ''}</span></li>`).join('')
+    : '<li class="empty">No requests yet on this device.</li>';
+}
+$('#usageRefresh').addEventListener('click', () => renderUsage(true));
+$('#openUsageBtn').addEventListener('click', () => { $('#settingsModal').hidden = true; go('usage'); });
+$('#meUsageBtn').addEventListener('click', () => go('usage'));
 
 /* ---------------- ME (avatar moves) ---------------- */
 $$('#moves button').forEach(b => b.addEventListener('click', () => {

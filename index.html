@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=team1">
+<link rel="stylesheet" href="styles.css?v=usage1">
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
@@ -406,12 +406,34 @@
     </section>
 
     <!-- ========== SHOBOT (avatar) ========== -->
+    <section class="view" id="view-usage">
+      <div class="usage">
+        <div class="usage-head">
+          <div><h2>📊 Shobot's usage</h2><p class="muted small" id="usageSub">How much brain power Shobot has used</p></div>
+          <button type="button" class="btn ghost sm" id="usageRefresh">↻ Refresh</button>
+        </div>
+        <div class="usage-meter" id="usageMeter">
+          <div class="um-top"><span class="um-label" id="umLabel">Checking…</span><span class="um-reset" id="umReset"></span></div>
+          <div class="um-big"><b id="umUsed">–</b><span id="umOf"></span></div>
+          <div class="um-bar"><i id="umFill"></i></div>
+          <div class="um-left" id="umLeft"></div>
+        </div>
+        <div class="usage-tiles" id="usageTiles"></div>
+        <h3>What used the most this week</h3>
+        <div class="usage-bars" id="usageBars"></div>
+        <h3>Recent</h3>
+        <ul class="usage-list" id="usageList"></ul>
+        <p class="muted small" id="usageNote"></p>
+      </div>
+    </section>
+
     <section class="view" id="view-me">
       <div class="me">
         <div class="me-stage">
           <div class="shobot shobot-big" data-shobot></div>
         </div>
         <h2>Shobot's moves</h2>
+        <button type="button" class="btn ghost usage-link" id="meUsageBtn">📊 See how much brain power Shobot used</button>
         <div class="grid-btns moves" id="moves">
           <button data-anim="idle">😌 Float</button>
           <button data-anim="wave">👋 Wave</button>
@@ -463,6 +485,7 @@
     <label class="check"><input type="checkbox" id="voiceOn"> Shobot reads answers out loud</label>
     <label class="check"><input type="checkbox" id="soundOn" checked> Little beep sounds</label>
     <div class="row">
+      <button class="btn ghost sm" id="openUsageBtn">📊 Usage</button>
       <button class="btn ghost sm danger" id="clearChatBtn">Delete this chat</button>
       <button class="btn ghost sm" id="installTip">Add to Home Screen?</button>
     </div>
@@ -493,6 +516,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="js/app.js?v=team1"></script>
+<script type="module" src="js/app.js?v=usage1"></script>
 </body>
 </html>

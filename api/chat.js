@@ -92,8 +92,11 @@ async function streamGateway(token, mode, system, messages, write, brain = 'smar
     }
     await readSSE(r.body, ev => {
       if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') write(ev.delta.text);
+      else if (ev.type === 'message_start') info.usage = { in: ev.message?.usage?.input_tokens || 0, out: 0, cost: null };
+      else if (ev.type === 'message_delta' && ev.usage) info.usage = { ...(info.usage || { in: 0 }), out: ev.usage.output_tokens || 0, cost: null };
       else if (ev.type === 'error') write(`\n[[error:${ev.error?.message || 'stream error'}]]`);
     });
+    info.model = model;
     return null;
   }
   return lastErr;
@@ -115,7 +118,7 @@ async function streamOpenRouter(key, mode, system, messages, write, brain = 'sma
     const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json', 'x-title': 'Shobot', 'http-referer': 'https://shobot.vercel.app' },
-      body: JSON.stringify({ model, max_tokens: MAX_TOKENS[mode], stream: true, messages: toOpenAI(system, messages) }),
+      body: JSON.stringify({ model, max_tokens: MAX_TOKENS[mode], stream: true, usage: { include: true }, messages: toOpenAI(system, messages) }),
     });
     if (!r.ok || !r.body) {
       const j = await r.json().catch(() => ({}));
@@ -129,6 +132,7 @@ async function streamOpenRouter(key, mode, system, messages, write, brain = 'sma
     await readSSE(r.body, ev => {
       const t = ev?.choices?.[0]?.delta?.content;
       if (t) { wrote += t.length; write(t); }
+      if (ev?.usage) info.usage = { in: ev.usage.prompt_tokens || 0, out: ev.usage.completion_tokens || 0, cost: typeof ev.usage.cost === 'number' ? ev.usage.cost : null };
       if (ev?.error) write(`\n[[error:${ev.error.message || 'stream error'}]]`);
     });
     info.model = model; info.chars = wrote;
@@ -180,6 +184,7 @@ async function streamGemini(key, mode, system, messages, write, brain = 'smart',
       const c = ev?.candidates?.[0];
       for (const p of c?.content?.parts || []) if (p.text && !p.thought) { wrote += p.text.length; write(p.text); }
       if (c?.finishReason) info.finish = c.finishReason;
+      if (ev?.usageMetadata) info.usage = { in: ev.usageMetadata.promptTokenCount || 0, out: (ev.usageMetadata.candidatesTokenCount || 0) + (ev.usageMetadata.thoughtsTokenCount || 0), cost: null };
       if (ev?.error) write(`\n[[error:${ev.error.message || 'stream error'}]]`);
     });
     info.model = model; info.chars = wrote;
@@ -201,6 +206,17 @@ module.exports = async (req, res) => {
         : streamGateway(gwToken, mode, system, messages, write, brain, info);
 
   if (req.method === 'GET') {
+    if (req.query && req.query.usage) {
+      // How much of the OpenRouter key's limit is used (only OpenRouter can tell us this).
+      if (provider !== 'openrouter') return res.status(200).json({ provider, key: null });
+      const r = await fetch('https://openrouter.ai/api/v1/key', { headers: { authorization: `Bearer ${orKey}` } }).catch(() => null);
+      const j = r ? await r.json().catch(() => ({})) : {};
+      const d = j?.data || null;
+      return res.status(200).json({ provider, key: d && {
+        label: d.label, limit: d.limit, limit_remaining: d.limit_remaining, limit_reset: d.limit_reset,
+        usage: d.usage, usage_daily: d.usage_daily, usage_weekly: d.usage_weekly, usage_monthly: d.usage_monthly,
+      }, error: d ? undefined : (j?.error?.message || 'Could not read usage') });
+    }
     if (req.query && req.query.ping) {
       // ?ping=1 checks the brain; &mode=plan|agent|... tests that mode; &brain=fast|smart|genius
       const pm = MAX_TOKENS[req.query.mode] ? req.query.mode : 'chat';
@@ -245,5 +261,6 @@ module.exports = async (req, res) => {
     return res.status(502).json({ error: err });
   }
   if (!started) write('');
+  if (!err) res.write(`\n[[usage:${JSON.stringify({ provider, model: info.model || null, ...(info.usage || {}) })}]]`);
   return res.end();
 };
