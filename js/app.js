@@ -116,6 +116,7 @@ You live inside the Shobot app. You can DO things by putting a tag at the very E
 - Avatar moves: [[action:dance]] [[action:wave]] [[action:happy]] [[action:spin]] [[action:sleep]] [[action:surprised]]
 - Phone things (the app ALWAYS asks the user's permission first): [[action:vibrate]] [[action:camera]] [[action:mic]] [[action:location]] [[action:notify]] [[action:flashlight]] [[action:speaker]] [[action:clipboard]] [[action:wakelock]]
 - Open a tool, only if the user asks to open it: [[action:open|code|studio3d|music|test|phone|me]]
+- Ask your team of helper robots (3 to 10 agents working at the same time) to do a big job together: [[action:team|the job]], or choose the size: [[action:team|7|the job]]. Use it when the user asks for your agents or team, or for big jobs such as planning a whole game, a research project, a long story or a big school project.
 - Remember something useful for future chats (their favourite things, projects, goals, how they like answers): [[action:remember|short fact]]. Never remember private details such as home address, phone number, passwords, school name or full name.
 Use an action only when the user clearly asks you to make or do that thing; for normal questions just answer. When you use build3d, beat or code, say one short excited sentence first (the user will watch you work live). Never claim you used the phone without the permission step.`,
 
@@ -147,11 +148,28 @@ const DETAIL = {
   super: 'Detail level: SUPER DETAILED. Use 150–300 parts: every panel, bolt, window frame, light, seam and trim piece. Prefer lathe, extrude and tube parts for smooth curved forms.',
 };
 
+const TEAM_PROMPTS = {
+  plan: n => `You are Shobot, the leader of a team of helper robots, working for ${userName()}, a young builder. Keep everything kid-friendly and safe.
+Split the user's task into exactly ${n} jobs for ${n} agents. The agents work AT THE SAME TIME and cannot see each other's work, so every job must make sense on its own and together they must cover the whole task with no overlap.
+Choose the most useful mix of roles for THIS task, for example: researcher, writer, coder, designer, builder3d, musician, teacher, mathematician, storyteller, gamer, scientist, critic. Give each agent a fun short robot name.
+Reply with ONLY JSON, no other text:
+{"goal":"one short sentence","agents":[{"name":"...","role":"...","task":"1-3 clear, specific sentences"}]}
+Write the goal and the tasks in the same language as the user.`,
+  agent: (a, n) => `${BASE()}
+You are ${a.name}, the ${a.role} on Shobot's team of ${n} helper robots. The team leader gave you ONE job. The other agents are doing the other parts at the same time, so do ONLY your job, and do it really well: concrete, correct, useful details, checked carefully.
+Keep it under 250 words unless your job truly needs more (code, a story chapter or a detailed plan may be longer). Use simple language and markdown. Do not add action tags.`,
+  review: () => `${BASE()}
+You are Checker, the quality-control robot on Shobot's team. Read the team's work and point out the most important mistakes, wrong facts, missing pieces and parts that don't fit together, as 3 to 6 short, specific bullet points. If everything is good, say so in one line.`,
+  final: () => `${BASE()}
+You are Shobot, the leader of your helper-robot team. The team has finished. Combine their work into ONE excellent, well-organized answer for ${userName()}: keep the best parts, fix every problem the Checker found, remove repetition, and make it easy to read (short headings or lists when helpful). Do not list every agent; you may thank the team in one short line.
+If the user asked you to MAKE something (a game, app or website; a 3D model; a music beat), end your answer with exactly one action tag that carries a DETAILED description built from the team's plan: [[action:code|...]] or [[action:build3d|...]] or [[action:beat|...]]. Never use the ] character inside the tag. Otherwise use no tags.`,
+};
+
 /* ---------------- AI ---------------- */
 const BRAINS = {
-  fast: { label: 'Fast ⚡', tier: { chat: 'quick', music: 'quick', code: 'default', '3d': 'default' } },
-  smart: { label: 'Smart 🧠', tier: { chat: 'default', music: 'quick', code: 'default', '3d': 'default' } },
-  genius: { label: 'Genius 🌟', tier: { chat: 'complex', music: 'default', code: 'complex', '3d': 'complex' } },
+  fast: { label: 'Fast ⚡', tier: { chat: 'quick', music: 'quick', code: 'default', '3d': 'default', plan: 'quick', agent: 'quick', review: 'quick', final: 'default' } },
+  smart: { label: 'Smart 🧠', tier: { chat: 'default', music: 'quick', code: 'default', '3d': 'default', plan: 'default', agent: 'quick', review: 'default', final: 'default' } },
+  genius: { label: 'Genius 🌟', tier: { chat: 'complex', music: 'default', code: 'complex', '3d': 'complex', plan: 'complex', agent: 'default', review: 'complex', final: 'complex' } },
 };
 const brain = () => BRAINS[settings.brain] || BRAINS.smart;
 function setAiStatus(on, label) {
@@ -164,8 +182,8 @@ async function blobToBase64(b) {
   for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
   return btoa(bin);
 }
-async function callAI(mode, messages, { onText, signal, images } = {}) {
-  const system = PROMPTS[mode]();
+async function callAI(mode, messages, { onText, signal, images, system: customSystem } = {}) {
+  const system = customSystem || PROMPTS[mode]();
   const sample = await samplePromise;
   const pics = images && images.length ? images : null;
   if (sample) {
@@ -190,7 +208,7 @@ async function callAI(mode, messages, { onText, signal, images } = {}) {
     method: 'POST', headers: { 'content-type': 'application/json' }, signal,
     body: JSON.stringify({ mode, system, brain: settings.brain, messages: pics ? await withImages(messages, pics) : messages }),
   }).catch(e => { const err = new Error('offline'); err.code = e.name === 'AbortError' ? 'cancelled' : 'offline'; throw err; });
-  if (!r.ok || !r.body) { setAiStatus(false); const j = await r.json().catch(() => ({})); const err = new Error(j.error || 'HTTP ' + r.status); err.code = 'upstream_error'; throw err; }
+  if (!r.ok || !r.body) { setAiStatus(false); const j = await r.json().catch(() => ({})); const err = new Error(j.error || 'HTTP ' + r.status); err.code = r.status === 429 ? 'rate_limited' : 'upstream_error'; throw err; }
   setAiStatus(true);
   const reader = r.body.getReader(), dec = new TextDecoder(); let text = '';
   try {
@@ -317,7 +335,7 @@ function md(text) {
   let out = '';
   for (let i = 0; i < parts.length; i++) {
     if (i % 3 === 0) {
-      const t = esc(parts[i]).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+      const t = esc(parts[i]).replace(/^#{1,4}\s+(.+)$/gm, '<b class="md-h">$1</b>').replace(/^\s*[-*]\s+/gm, '• ').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
       out += t.split(/\n{2,}/).filter(x => x.trim()).map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
     } else if (i % 3 === 2) out += `<pre><code>${esc(parts[i])}</code></pre>`;
   }
@@ -716,6 +734,161 @@ async function chatBeat(desc) {
   toBottom();
 }
 
+/* ---- Team mode: 3 to 10 helper agents work at the same time ---- */
+const ROLE_EMOJI = { researcher: '🔎', writer: '✍️', coder: '💻', designer: '🎨', builder3d: '🧱', musician: '🎵', teacher: '🧑‍🏫', mathematician: '➗', storyteller: '📖', gamer: '🎮', scientist: '🔬', critic: '🧐', planner: '🗺️', artist: '🖌️', checker: '✅' };
+const ROLE_ANIM = { coder: 'coding', builder3d: 'building', designer: 'building', artist: 'building', musician: 'djing' };
+const TEAM_HUES = [0, 150, 200, 265, 320, 35, 95, 175, 235, 290];
+const DEFAULT_ROLES = ['researcher', 'writer', 'teacher', 'designer', 'critic', 'scientist', 'storyteller', 'mathematician', 'coder', 'gamer'];
+const BOT_NAMES = ['Zip', 'Bolt', 'Pixel', 'Nova', 'Gizmo', 'Sprocket', 'Echo', 'Byte', 'Comet', 'Widget'];
+function miniBot(el, hue) {
+  el.appendChild($('#shobot-tpl').content.cloneNode(true));
+  const svg = el.querySelector('svg'); svg.style.filter = `hue-rotate(${hue}deg)`;
+  const set = st => svg.setAttribute('class', 'av ' + st); set('idle'); return set;
+}
+async function pool(items, limit, fn) {
+  let next = 0;
+  const worker = async () => { while (next < items.length) { const k = next++; await fn(items[k], k); } };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
+async function callRetry(mode, msgs, opts = {}, onWait) {
+  for (let t = 0; ; t++) {
+    try { return await callAI(mode, msgs, opts); }
+    catch (e) {
+      if (e.code === 'rate_limited' && t < 3 && !opts.signal?.aborted) { onWait?.(t); await new Promise(r => setTimeout(r, 5000 * (t + 1))); continue; }
+      throw e;
+    }
+  }
+}
+const plain = t => String(t).replace(/```[\s\S]*?```/g, ' [code] ').replace(/[#*_`>]/g, '').replace(/\s+/g, ' ').trim();
+
+async function chatTeam(task, size = 5, images) {
+  task = (task || '').trim() || 'Help me with a big project';
+  size = Math.max(3, Math.min(10, Math.round(+size) || 5));
+  const cid = currentId, ctl = new AbortController();
+  Avatar.startJob('thinking');
+  const row = document.createElement('div'); row.className = 'msg bot';
+  row.innerHTML = `<div class="bubble wide"><div class="work team">
+    <div class="work-head"><span class="live-dot"></span><span class="tag">LIVE</span><span>👥 Shobot Team · ${size} agents</span><span class="work-status">Planning…</span></div>
+    <div class="team-goal"><div class="shobot team-leader"></div><div class="team-goal-text"><b>Shobot, team leader</b><p>Splitting the job into ${size} parts…</p></div></div>
+    <div class="team-grid"></div>
+    <div class="team-check" hidden></div>
+    <div class="work-progress"><i></i></div>
+    <div class="work-foot"></div></div></div>`;
+  msgsEl.appendChild(row); showHero(false); toBottom(true);
+  const w = row.querySelector('.work'), grid = w.querySelector('.team-grid'), foot = w.querySelector('.work-foot');
+  const status = t => (w.querySelector('.work-status').textContent = t);
+  const progress = f => (w.querySelector('.work-progress i').style.width = Math.max(4, Math.min(100, f * 100)) + '%');
+  Avatar.mount(w.querySelector('.team-leader'));
+  const stop = document.createElement('button'); stop.className = 'btn ghost'; stop.textContent = '■ Stop the team'; stop.onclick = () => ctl.abort(); foot.appendChild(stop);
+  const ctx = curMsgs().slice(-7, -1).map(m => `${m.role === 'user' ? userName() : 'Shobot'}: ${plain(m.content).slice(0, 400)}`).join('\n');
+  progress(0.04);
+  try {
+    // 1. The leader plans the jobs
+    let plan = null;
+    try {
+      const txt = await callRetry('plan', [{ role: 'user', content: `${ctx ? 'Recent chat, for context:\n' + ctx + '\n\n' : ''}TASK: ${task}\nNUMBER OF AGENTS: ${size}` }],
+        { signal: ctl.signal, system: TEAM_PROMPTS.plan(size), images }, () => status('Waiting for a free brain…'));
+      plan = extractJSON(txt);
+    } catch (e) { if (e.code === 'cancelled' || ctl.signal.aborted) throw e; if (e.code && e.code !== 'upstream_error' && e.code !== 'empty_completion') throw e; }
+    const agents = (Array.isArray(plan?.agents) ? plan.agents : []).slice(0, size).map((a, i) => ({
+      name: String(a.name || BOT_NAMES[i]).slice(0, 24), role: String(a.role || DEFAULT_ROLES[i]).toLowerCase().slice(0, 24), task: String(a.task || task).slice(0, 600),
+    }));
+    while (agents.length < size) { const i = agents.length; agents.push({ name: BOT_NAMES[i], role: DEFAULT_ROLES[i], task: `Help with this from the point of view of a ${DEFAULT_ROLES[i]}: ${task}` }); }
+    const goal = String(plan?.goal || task).slice(0, 200);
+    w.querySelector('.team-goal-text p').textContent = goal;
+    status(`${size} agents are working…`); progress(0.1);
+
+    // 2. Every agent works on its own job, a few at a time
+    const tiles = agents.map((a, i) => {
+      const t = document.createElement('div'); t.className = 'agent'; t.dataset.state = 'waiting';
+      const hue = TEAM_HUES[i % TEAM_HUES.length];
+      t.style.setProperty('--agent-c', `hsl(${(48 + hue) % 360} 95% 62%)`); t.style.setProperty('--i', i);
+      a.emoji = ROLE_EMOJI[a.role] || '🤖';
+      t.innerHTML = `<div class="agent-top"><div class="agent-bot"></div><div class="agent-info"><b>${a.emoji} ${esc(a.name)}</b><small>${esc(a.role)} · <span class="agent-state">waiting</span></small></div></div><div class="agent-task">${esc(a.task)}</div><div class="agent-out"></div>`;
+      grid.appendChild(t);
+      const setBot = miniBot(t.querySelector('.agent-bot'), hue);
+      t.addEventListener('click', () => { t.classList.toggle('open'); if (t.classList.contains('open') && a.result) t.querySelector('.agent-out').innerHTML = md(a.result); else if (a.result) t.querySelector('.agent-out').textContent = plain(a.result).slice(0, 260); });
+      return { el: t, setBot, setState: s => { t.dataset.state = s; t.querySelector('.agent-state').textContent = s; } };
+    });
+    toBottom();
+    let finished = 0;
+    await pool(agents, 3, async (a, i) => {
+      if (ctl.signal.aborted) return;
+      const tile = tiles[i]; const out = tile.el.querySelector('.agent-out');
+      tile.setState('working'); tile.setBot(ROLE_ANIM[a.role] || 'thinking');
+      try {
+        a.result = await callRetry('agent', [{ role: 'user', content: `TEAM GOAL: ${goal}\nWHAT ${userName().toUpperCase()} ASKED: ${task}\n\nYOUR JOB: ${a.task}` }], {
+          signal: ctl.signal, system: TEAM_PROMPTS.agent(a, size),
+          onText: ({ text }) => { if (!tile.el.classList.contains('open')) out.textContent = plain(text).slice(-260); },
+        }, () => tile.setState('waiting for a brain'));
+        tile.setState('done'); tile.setBot('happy'); setTimeout(() => tile.setBot('idle'), 1800);
+        if (!tile.el.classList.contains('open')) out.textContent = plain(a.result).slice(0, 260);
+      } catch (e) {
+        if (ctl.signal.aborted) { tile.setState('stopped'); tile.setBot('sleep'); return; }
+        a.result = ''; tile.setState('had a problem'); tile.setBot('surprised'); out.textContent = aiErrorText(e);
+      }
+      finished++; status(`${finished} of ${size} agents done`); progress(0.1 + 0.65 * (finished / size));
+    });
+    if (ctl.signal.aborted) throw Object.assign(new Error('stopped'), { code: 'cancelled' });
+    const good = agents.filter(a => a.result);
+    if (!good.length) throw Object.assign(new Error('no results'), { code: 'empty_completion' });
+    const work = agents.map(a => `### ${a.name} (${a.role})\nJob: ${a.task}\n\n${a.result || '(no result)'}`).join('\n\n');
+
+    // 3. Checker reviews everything
+    const check = w.querySelector('.team-check'); check.hidden = false;
+    check.innerHTML = `<div class="agent-top"><div class="agent-bot"></div><div class="agent-info"><b>✅ Checker</b><small>quality control · <span class="agent-state">checking</span></small></div></div><div class="agent-out"></div>`;
+    const setCheck = miniBot(check.querySelector('.agent-bot'), 120); setCheck('thinking');
+    status('Checker is checking the work…'); toBottom();
+    let review = '';
+    try {
+      review = await callRetry('review', [{ role: 'user', content: `The user asked: ${task}\nTeam goal: ${goal}\n\n${work}` }],
+        { signal: ctl.signal, system: TEAM_PROMPTS.review(), onText: ({ text }) => (check.querySelector('.agent-out').innerHTML = md(text)) });
+      check.querySelector('.agent-state').textContent = 'done'; setCheck('happy');
+    } catch (e) { if (ctl.signal.aborted) throw e; check.querySelector('.agent-state').textContent = 'skipped'; setCheck('surprised'); }
+    progress(0.85);
+
+    // 4. The leader writes the final answer
+    status('Shobot is putting it all together…'); Avatar.set('talking');
+    const bubble = addMsg('bot', ''); bubble.innerHTML = '<span class="typing"><span></span><span></span><span></span></span>';
+    const finalText = await callRetry('final', [{ role: 'user', content: `${userName()} asked: ${task}\nTeam goal: ${goal}\n\n${work}\n\n### Checker's notes\n${review || '(no notes)'}` }], {
+      signal: ctl.signal, system: TEAM_PROMPTS.final(), images,
+      onText: ({ text }) => { bubble.classList.add('streaming'); bubble.innerHTML = md(stripActions(text).text || '…'); toBottom(); },
+    });
+    bubble.classList.remove('streaming');
+    const { text: clean, actions } = stripActions(finalText);
+    bubble.innerHTML = md(clean || '👍');
+    stop.remove();
+    w.classList.add('done'); w.querySelector('.tag').textContent = 'DONE'; progress(1);
+    status(`Done · ${good.length} agents + Checker worked together`); confettiFrom(w);
+    remember('assistant', `👥 **Team of ${size}** worked on: ${goal}\n${agents.map(a => `${a.emoji} ${a.name} (${a.role}): ${a.task}`).join('\n')}`, { card: 'team' }, cid);
+    remember('assistant', finalText, {}, cid);
+    Avatar.endJob(); beep('ok'); toBottom();
+    speak(clean);
+    for (const act of actions) runAction(act);
+    return clean;
+  } catch (e) {
+    console.warn(e); stop.remove();
+    w.classList.add('done'); w.querySelector('.tag').textContent = 'STOPPED';
+    status(e.code === 'cancelled' || ctl.signal.aborted ? 'The team stopped.' : aiErrorText(e));
+    Avatar.endJob(false); if (!ctl.signal.aborted) Avatar.play('surprised', 1400);
+    return null;
+  }
+}
+
+/* team size button: Off → 3 → 5 → 7 → 10 */
+const TEAM_STEPS = [0, 3, 5, 7, 10];
+function showTeamBtn() {
+  const n = settings.team || 0;
+  $('#teamSize').textContent = n ? `${n} agents` : 'Off';
+  $('#teamBtn').setAttribute('aria-pressed', n ? 'true' : 'false');
+  input.placeholder = n ? `Give your team of ${n} a big job…` : 'Message Shobot…';
+}
+$('#teamBtn').addEventListener('click', () => {
+  const i = TEAM_STEPS.indexOf(settings.team || 0);
+  settings.team = TEAM_STEPS[(i + 1) % TEAM_STEPS.length]; saveSettings(); showTeamBtn();
+  if (settings.team) { toast(`👥 Team mode: ${settings.team} agents will work together`); Avatar.play('wave', 1500); }
+});
+
 const avatarMoves = ['dance', 'wave', 'happy', 'spin', 'sleep', 'surprised', 'thinking', 'teleport'];
 async function runAction({ a, arg }) {
   if (avatarMoves.includes(a)) { Avatar.play(a, a === 'sleep' ? 5000 : 4000); return; }
@@ -723,6 +896,10 @@ async function runAction({ a, arg }) {
     const fact = arg.replace(/\s+/g, ' ').trim().slice(0, 140);
     if (fact && !memories.some(m => m.toLowerCase() === fact.toLowerCase())) { memories.push(fact); saveMemories(); toast('🧠 Shobot will remember: ' + fact); }
     return;
+  }
+  if (a === 'team') {
+    const m = arg.match(/^(\d+)\s*\|\s*([\s\S]*)$/);
+    return chatTeam(m ? m[2] : arg, m ? +m[1] : (settings.team || 5));
   }
   if (a === 'build3d') return chatBuild3d(arg);
   if (a === 'beat') return chatBeat(arg);
@@ -751,6 +928,11 @@ async function sendChat(text, { silent } = {}) {
   const sb = $('#sendBtn'); sb.classList.remove('fly'); void sb.offsetWidth; sb.classList.add('fly');
   $('#aiDot').classList.add('busy');
   remember('user', text, pics.length ? { images: pics.map(p => p.thumb) } : {}); addMsg('user', text, pics.map(p => p.thumb));
+  if (settings.team) {
+    $('#aiDot').classList.remove('busy');
+    try { return await chatTeam(text, settings.team, pics.map(p => p.blob)); }
+    finally { chatBusy = false; $('#sendBtn').disabled = false; }
+  }
   const bubble = addMsg('bot', '');
   bubble.innerHTML = '<span class="typing"><span></span><span></span><span></span></span>';
   if (!Avatar.jobs) Avatar.set('thinking');
@@ -1143,7 +1325,7 @@ const api = { Avatar, callAI, gen3d, toast, beep, download, extractJSON, store, 
 window.Shobot = api;
 
 /* ---------------- boot ---------------- */
-makeSky();
+makeSky(); showTeamBtn();
 stagger($$('.chips .chip')); stagger($$('#moves button')); stagger($$('#shapeBtns button')); stagger($$('#attachMenu button'));
 Avatar.init();
 renderChat(); loadFile('html'); run(); renderCards();

@@ -571,3 +571,35 @@ textarea:focus-visible,input:not([type=checkbox]):not([type=range]):not([type=co
 .mem-list li span{flex:1;min-width:0;overflow-wrap:anywhere}
 .mem-list li button{border:0;background:var(--panel2);border-radius:8px;width:28px;height:28px;flex:none}
 .field .muted.small{font-weight:600}
+
+/* ===== team mode ===== */
+.composer-tools{display:flex;gap:8px;padding:8px 16px 0}
+.pill{border:2px solid var(--line);background:var(--bg2);color:var(--ink2);border-radius:999px;padding:6px 12px;font-weight:800;font-size:13px;position:relative;overflow:hidden;transition:transform .18s cubic-bezier(.3,1.6,.5,1),background .2s,border-color .2s}
+.pill[aria-pressed=true]{background:linear-gradient(90deg,#6c3cf0,#e21fd8);border-color:transparent;color:#fff;box-shadow:0 0 14px #e21fd866}
+.pill:active{transform:scale(.93)}
+.team-goal{display:flex;gap:10px;align-items:center;padding:12px 14px;background:var(--panel)}
+.team-goal .shobot{width:48px;height:60px}
+.team-goal p{margin:2px 0 0;color:var(--ink2);font-size:14px}
+.team-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;padding:12px 14px}
+.agent,.team-check{background:var(--bg2);border:2px solid var(--line);border-radius:14px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;min-width:0;cursor:pointer;transition:border-color .3s,box-shadow .3s;animation:chipIn .45s calc(var(--i,0) * 60ms) both cubic-bezier(.3,1.5,.5,1)}
+.team-check{margin:0 14px 12px;cursor:default;border-color:#19e3a066}
+.agent-top{display:flex;gap:8px;align-items:center;min-width:0}
+.agent-bot{width:36px;height:45px;flex:none}
+.agent-bot svg{width:100%;height:100%;overflow:visible}
+.agent-info{min-width:0;display:flex;flex-direction:column}
+.agent-info b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agent-info small{font-size:11px;color:var(--muted)}
+.agent-task{font-size:12px;color:var(--ink2);line-height:1.35;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.agent-out{font-size:12.5px;line-height:1.4;color:var(--ink);overflow:hidden;max-height:5.6em;-webkit-mask-image:linear-gradient(#000 60%,transparent);mask-image:linear-gradient(#000 60%,transparent);overflow-wrap:anywhere}
+.agent-out:empty{display:none}
+.agent.open{grid-column:1/-1}
+.agent.open .agent-out{max-height:none;-webkit-mask-image:none;mask-image:none}
+.agent.open .agent-task{-webkit-line-clamp:unset}
+.team-check .agent-out{max-height:none;-webkit-mask-image:none;mask-image:none}
+.agent[data-state=working]{border-color:var(--agent-c);animation:agentGlow 1.4s ease-in-out infinite}
+.agent[data-state=working] .agent-state{color:var(--agent-c);font-weight:800}
+.agent[data-state=done]{border-color:color-mix(in srgb,var(--agent-c) 55%,var(--line))}
+.agent[data-state=done] .agent-info b::after{content:' ✓';color:var(--mint)}
+.agent[data-state="had a problem"]{border-color:#ff4d6d88}
+@keyframes agentGlow{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 16px -2px var(--agent-c)}}
+.bubble .md-h{display:block;font-family:var(--head);font-size:1.12em;margin:4px 0 2px;color:var(--yellow)}

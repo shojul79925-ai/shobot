@@ -8,17 +8,19 @@
 const GATEWAY = 'https://ai-gateway.vercel.sh/v1/messages';
 // Brain levels the user picks in Shobot's settings: fast / smart / genius.
 const HAIKU = 'anthropic/claude-haiku-5.5', SONNET = 'anthropic/claude-sonnet-5.5', OPUS = 'anthropic/claude-opus-5.5';
+// Team mode: plan (leader splits the job), agent (each helper), review (checker), final (leader's answer).
 const GW_MODELS = {
-  fast: { chat: [HAIKU], music: [HAIKU], code: [SONNET, HAIKU], '3d': [SONNET, HAIKU] },
-  smart: { chat: [SONNET, HAIKU], music: [HAIKU], code: [SONNET, HAIKU], '3d': [SONNET, HAIKU] },
-  genius: { chat: [OPUS, SONNET], music: [SONNET, HAIKU], code: [OPUS, SONNET], '3d': [OPUS, SONNET] },
+  fast: { chat: [HAIKU], music: [HAIKU], code: [SONNET, HAIKU], '3d': [SONNET, HAIKU], plan: [HAIKU], agent: [HAIKU], review: [HAIKU], final: [SONNET, HAIKU] },
+  smart: { chat: [SONNET, HAIKU], music: [HAIKU], code: [SONNET, HAIKU], '3d': [SONNET, HAIKU], plan: [SONNET, HAIKU], agent: [HAIKU], review: [SONNET, HAIKU], final: [SONNET, HAIKU] },
+  genius: { chat: [OPUS, SONNET], music: [SONNET, HAIKU], code: [OPUS, SONNET], '3d': [OPUS, SONNET], plan: [OPUS, SONNET], agent: [SONNET, HAIKU], review: [OPUS, SONNET], final: [OPUS, SONNET] },
 };
 const GEMINI_MODELS = {
   fast: ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-2.5-flash'],
   smart: ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-2.5-flash'],
   genius: ['gemini-3.8-pro', 'gemini-3-pro', 'gemini-2.5-pro', 'gemini-3.8-flash'],
 };
-const MAX_TOKENS = { chat: 1500, music: 1500, code: 16000, '3d': 24000 };
+const MAX_TOKENS = { chat: 1500, music: 1500, code: 16000, '3d': 24000, plan: 2500, agent: 3500, review: 2000, final: 5000 };
+let lastStatus = 0; // status of the last failed AI request (429 = too many requests)
 const IMG_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
 function cleanContent(c, imgBudget) {
@@ -79,7 +81,7 @@ async function streamGateway(token, mode, system, messages, write, brain = 'smar
     const r = await gateway(token, { model, max_tokens: MAX_TOKENS[mode], system, messages, stream: true });
     if (!r.ok || !r.body) {
       const j = await r.json().catch(() => ({}));
-      lastErr = j?.error?.message || `gateway ${r.status}`;
+      lastErr = j?.error?.message || `gateway ${r.status}`; lastStatus = r.status;
       if ([401, 403, 429].includes(r.status)) break;
       continue;
     }
@@ -118,11 +120,12 @@ async function streamGemini(key, mode, system, messages, write, brain = 'smart')
   let lastErr = 'AI error';
   for (const model of models) {
     // In chat, let Gemini look things up on Google so answers about today's world are right.
-    let r = await geminiRequest(key, model, mode, system, messages, true, mode === 'chat');
-    if (!r.ok && mode === 'chat' && (r.status === 400 || r.status === 429)) r = await geminiRequest(key, model, mode, system, messages, true, false);
+    const canSearch = mode === 'chat' || mode === 'agent';
+    let r = await geminiRequest(key, model, mode, system, messages, true, canSearch);
+    if (!r.ok && canSearch && (r.status === 400 || r.status === 429)) r = await geminiRequest(key, model, mode, system, messages, true, false);
     if (!r.ok || !r.body) {
       const j = await r.json().catch(() => ({}));
-      lastErr = j?.error?.message || `gemini ${r.status}`;
+      lastErr = j?.error?.message || `gemini ${r.status}`; lastStatus = r.status;
       if ([400, 401, 403].includes(r.status) && !/model/i.test(lastErr)) break; // bad key: stop
       continue; // model missing or busy: try the next one
     }
@@ -171,7 +174,7 @@ module.exports = async (req, res) => {
     if (!started) { started = true; res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-provider': provider }); }
     res.write(t);
   };
-  let err;
+  let err; lastStatus = 0;
   try {
     err = provider === 'gemini'
       ? await streamGemini(geminiKey, mode, system, messages, write, brain)
@@ -180,7 +183,7 @@ module.exports = async (req, res) => {
     if (started) { res.write('\n[[error:connection dropped]]'); return res.end(); }
     err = e.message || 'AI error';
   }
-  if (err && !started) return res.status(502).json({ error: err });
+  if (err && !started) return res.status(lastStatus === 429 ? 429 : 502).json({ error: err });
   if (!started) write('');
   return res.end();
 };
