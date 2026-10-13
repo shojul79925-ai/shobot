@@ -15,7 +15,9 @@ const store = {
   set(k, v) { try { localStorage.setItem('shobot.' + k, JSON.stringify(v)); } catch {} },
   del(k) { try { localStorage.removeItem('shobot.' + k); } catch {} },
 };
-const settings = Object.assign({ name: '', voice: false, sound: true }, store.get('settings', {}));
+const settings = Object.assign({ name: '', voice: false, sound: true, brain: 'smart' }, store.get('settings', {}));
+let memories = store.get('memories', []);
+const saveMemories = () => store.set('memories', memories.slice(-30));
 const saveSettings = () => store.set('settings', settings);
 const userName = () => settings.name || 'Shokul';
 
@@ -98,7 +100,11 @@ const Avatar = {
 /* ---------------- Shobot's instructions ---------------- */
 const BASE = () => `You are Shobot, a friendly, upbeat robot AI helper made for ${userName()}, a young builder in Thailand who makes apps and games.
 Personality: cheerful, curious, encouraging, a few emojis, explains things simply and clearly like a great teacher. Keep it kid-friendly and safe.
-Always reply in the same language the user writes in (for example Thai or English).`;
+Always reply in the same language the user writes in (for example Thai or English).
+Today is ${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
+Be genuinely smart: think carefully before answering, get facts right, show the steps for maths and homework, and check your answer. If you are not sure, say so honestly instead of guessing.${memories.length ? `
+Things you remember about ${userName()} from earlier chats:
+${memories.map(m => '- ' + m).join('\n')}` : ''}`;
 
 const PROMPTS = {
   chat: () => `${BASE()}
@@ -110,6 +116,7 @@ You live inside the Shobot app. You can DO things by putting a tag at the very E
 - Avatar moves: [[action:dance]] [[action:wave]] [[action:happy]] [[action:spin]] [[action:sleep]] [[action:surprised]]
 - Phone things (the app ALWAYS asks the user's permission first): [[action:vibrate]] [[action:camera]] [[action:mic]] [[action:location]] [[action:notify]] [[action:flashlight]] [[action:speaker]] [[action:clipboard]] [[action:wakelock]]
 - Open a tool, only if the user asks to open it: [[action:open|code|studio3d|music|test|phone|me]]
+- Remember something useful for future chats (their favourite things, projects, goals, how they like answers): [[action:remember|short fact]]. Never remember private details such as home address, phone number, passwords, school name or full name.
 Use an action only when the user clearly asks you to make or do that thing; for normal questions just answer. When you use build3d, beat or code, say one short excited sentence first (the user will watch you work live). Never claim you used the phone without the permission step.`,
 
   code: () => `${BASE()}
@@ -141,11 +148,16 @@ const DETAIL = {
 };
 
 /* ---------------- AI ---------------- */
-const TIER = { chat: 'quick', music: 'quick', code: 'default', '3d': 'default' };
+const BRAINS = {
+  fast: { label: 'Fast ⚡', tier: { chat: 'quick', music: 'quick', code: 'default', '3d': 'default' } },
+  smart: { label: 'Smart 🧠', tier: { chat: 'default', music: 'quick', code: 'default', '3d': 'default' } },
+  genius: { label: 'Genius 🌟', tier: { chat: 'complex', music: 'default', code: 'complex', '3d': 'complex' } },
+};
+const brain = () => BRAINS[settings.brain] || BRAINS.smart;
 function setAiStatus(on, label) {
   const dot = $('#aiDot'), busy = dot.classList.contains('busy');
   dot.className = 'dot ' + (on ? 'on' : 'off') + (busy ? ' busy' : '');
-  $('#aiStatus').textContent = label || (on ? 'online · ready to help' : 'brain offline · basic mode');
+  $('#aiStatus').textContent = label || (on ? `online · ${brain().label} brain` : 'brain offline · basic mode');
 }
 async function blobToBase64(b) {
   const buf = new Uint8Array(await b.arrayBuffer()); let bin = '';
@@ -163,7 +175,7 @@ async function callAI(mode, messages, { onText, signal, images } = {}) {
     }
     const input = [{ role: 'user', content: system + '\n\n---\nThat was your standing job description. The conversation starts below; reply to the latest message as Shobot.' }, ...messages];
     try {
-      const r = await sample(input, { modelTier: TIER[mode], cache: false, signal, onText, ...(pics ? { images: pics.slice(0, 4) } : {}) });
+      const r = await sample(input, { modelTier: brain().tier[mode], cache: false, signal, onText, ...(pics ? { images: pics.slice(0, 4) } : {}) });
       setAiStatus(true);
       return r.text;
     } catch (e) {
@@ -176,7 +188,7 @@ async function callAI(mode, messages, { onText, signal, images } = {}) {
   // Own website (Vercel): stream from /api/chat
   const r = await fetch('api/chat', {
     method: 'POST', headers: { 'content-type': 'application/json' }, signal,
-    body: JSON.stringify({ mode, system, messages: pics ? await withImages(messages, pics) : messages }),
+    body: JSON.stringify({ mode, system, brain: settings.brain, messages: pics ? await withImages(messages, pics) : messages }),
   }).catch(e => { const err = new Error('offline'); err.code = e.name === 'AbortError' ? 'cancelled' : 'offline'; throw err; });
   if (!r.ok || !r.body) { setAiStatus(false); const j = await r.json().catch(() => ({})); const err = new Error(j.error || 'HTTP ' + r.status); err.code = 'upstream_error'; throw err; }
   setAiStatus(true);
@@ -202,7 +214,7 @@ async function withImages(messages, pics) {
   return out;
 }
 async function checkAI() {
-  if (IN_CLAUDE) { const s = await samplePromise; setAiStatus(!!s, s ? 'online · ready to help' : 'brain offline · basic mode'); return; }
+  if (IN_CLAUDE) { const s = await samplePromise; setAiStatus(!!s); return; }
   try { const r = await fetch('api/chat'); const j = await r.json(); setAiStatus(!!j.ai); } catch { setAiStatus(false); }
 }
 function aiErrorText(e) {
@@ -235,6 +247,35 @@ function partialCode(text) {
   const i = text.search(/```(?:html)?\s*\n/i); if (i < 0) return '';
   const start = text.indexOf('\n', i) + 1, end = text.indexOf('```', start);
   return text.slice(start, end < 0 ? undefined : end);
+}
+/** Run the code in a hidden sandbox for a moment and report any JavaScript errors. */
+function testCode(html, ms = 2200) {
+  return new Promise(res => {
+    const errs = [];
+    const catcher = `<script>(function(){var s=function(m){try{parent.postMessage({shobotErr:String(m).slice(0,300)},'*')}catch(e){}};window.onerror=function(m,u,l){s(m+(l?' (line '+l+')':''))};window.addEventListener('unhandledrejection',function(e){s('Promise error: '+((e.reason&&e.reason.message)||e.reason))});})();<\/script>`;
+    const doc = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, m => m + catcher) : catcher + html;
+    const fr = document.createElement('iframe');
+    fr.setAttribute('sandbox', 'allow-scripts'); fr.style.cssText = 'position:fixed;width:390px;height:700px;left:-9999px;top:0;opacity:0;pointer-events:none';
+    const onMsg = e => { if (e.source === fr.contentWindow && e.data && e.data.shobotErr && errs.length < 5 && !errs.includes(e.data.shobotErr)) errs.push(e.data.shobotErr); };
+    addEventListener('message', onMsg);
+    fr.srcdoc = doc; document.body.appendChild(fr);
+    setTimeout(() => { removeEventListener('message', onMsg); fr.remove(); res(errs); }, ms);
+  });
+}
+/** Write code, test it, and if it crashes, fix it once by itself. */
+async function genTestedCode(request, { onCode, onStatus, signal } = {}) {
+  let out = await genCode(request, { onCode, signal });
+  onStatus?.('Testing my code… 🧪');
+  let errs = await testCode(out.html);
+  if (errs.length && !signal?.aborted) {
+    onStatus?.('Found a bug! Fixing it… 🔧');
+    files = { html: out.html, css: '', js: '' };
+    const fixed = await genCode(`When this code runs it shows these errors: ${errs.join(' | ')}. Find the cause, fix it, and return the whole corrected file. Keep everything else the same.`, { onCode, signal });
+    onStatus?.('Testing again… 🧪');
+    const errs2 = await testCode(fixed.html);
+    out = { html: fixed.html, note: out.note, fixed: errs, remaining: errs2 };
+  } else out.remaining = errs;
+  return out;
 }
 async function genCode(request, { onCode, signal } = {}) {
   const ctx = `Current project (one HTML file):\n\`\`\`html\n${buildDoc().slice(0, 40000)}\n\`\`\`\n\nRequest: ${request}`;
@@ -617,8 +658,9 @@ async function chatCode(request) {
   const ctl = new AbortController(); const unStop = stopButton(card, ctl);
   let lines = 0;
   try {
-    const { html, note } = await genCode(request, {
+    const { html, note, fixed, remaining } = await genTestedCode(request, {
       signal: ctl.signal,
+      onStatus: t => card.status(t),
       onCode: code => {
         const all = code.split('\n'); lines = all.length;
         pre.innerHTML = esc(all.slice(-22).join('\n')) + '<span class="cursor"></span>';
@@ -630,7 +672,7 @@ async function chatCode(request) {
     pre.remove();
     const fr = document.createElement('iframe'); fr.title = 'Preview'; fr.setAttribute('sandbox', 'allow-scripts allow-forms');
     fr.srcdoc = buildDoc(); card.screen.prepend(fr);
-    card.note.textContent = '🤖 ' + note.slice(0, 300);
+    card.note.textContent = '🤖 ' + note.slice(0, 300) + (fixed ? `\n🔧 I found and fixed ${fixed.length} bug${fixed.length > 1 ? 's' : ''} by myself.` : '') + (remaining?.length ? '\n⚠️ There may still be a small bug. Ask me to fix it!' : '\n✅ Tested: no errors.');
     card.done(`Done · ${html.split('\n').length} lines of code`);
     remember('assistant', `⌨️ I coded **${request}**! ${note.slice(0, 200)}`, { card: 'code' }, cid);
     card.button('Open in Code', () => go('code'), false);
@@ -677,6 +719,11 @@ async function chatBeat(desc) {
 const avatarMoves = ['dance', 'wave', 'happy', 'spin', 'sleep', 'surprised', 'thinking', 'teleport'];
 async function runAction({ a, arg }) {
   if (avatarMoves.includes(a)) { Avatar.play(a, a === 'sleep' ? 5000 : 4000); return; }
+  if (a === 'remember') {
+    const fact = arg.replace(/\s+/g, ' ').trim().slice(0, 140);
+    if (fact && !memories.some(m => m.toLowerCase() === fact.toLowerCase())) { memories.push(fact); saveMemories(); toast('🧠 Shobot will remember: ' + fact); }
+    return;
+  }
   if (a === 'build3d') return chatBuild3d(arg);
   if (a === 'beat') return chatBeat(arg);
   if (a === 'code') return chatCode(arg);
@@ -863,12 +910,13 @@ async function codeAsk(text) {
   codeCtl = new AbortController(); $('#codeSend').textContent = '■';
   showPane('editor'); loadFile('html');
   try {
-    const { html, note } = await genCode(text, {
+    const { html, note, fixed, remaining } = await genTestedCode(text, {
       signal: codeCtl.signal,
+      onStatus: t => (wait.textContent = t),
       onCode: code => { editor.value = code; updateGutter(); editor.scrollTop = editor.scrollHeight; wait.textContent = `Shobot is typing… line ${code.split('\n').length}`; },
     });
     files = { html, css: '', js: '' }; loadFile('html'); run();
-    wait.textContent = '🤖 ' + note.slice(0, 400);
+    wait.textContent = '🤖 ' + note.slice(0, 400) + (fixed ? ` 🔧 Fixed ${fixed.length} bug${fixed.length > 1 ? 's' : ''} by myself.` : '') + (remaining?.length ? ' ⚠️ Maybe one bug left: ' + remaining[0] : ' ✅ Tested: no errors.');
     Avatar.endJob(); beep('ok');
     if (innerWidth < 900) showPane('preview');
   } catch (e) {
@@ -1059,11 +1107,33 @@ $$('#moves button').forEach(b => b.addEventListener('click', () => {
 /* ---------------- settings ---------------- */
 $('#settingsBtn').addEventListener('click', () => {
   $('#userName').value = settings.name; $('#voiceOn').checked = settings.voice; $('#soundOn').checked = settings.sound;
+  pickBrain(settings.brain); renderMemories();
   $('#settingsModal').hidden = false;
 });
 $('#settingsClose').addEventListener('click', () => {
   settings.name = $('#userName').value.trim(); settings.voice = $('#voiceOn').checked; settings.sound = $('#soundOn').checked;
-  saveSettings(); $('#settingsModal').hidden = true; toast('Saved ✓');
+  settings.brain = $('#brainSeg .on')?.dataset.brain || 'smart';
+  saveSettings(); $('#settingsModal').hidden = true; toast('Saved ✓'); checkAI();
+});
+const BRAIN_INFO = {
+  fast: 'Answers in a flash. Good for quick questions.',
+  smart: 'Thinks a little first. Better answers for most things.',
+  genius: 'Thinks the hardest. Best for big projects, homework and detailed 3D, but slower.',
+};
+function pickBrain(b) {
+  $$('#brainSeg button').forEach(x => x.classList.toggle('on', x.dataset.brain === b));
+  $('#brainInfo').textContent = BRAIN_INFO[b] || '';
+}
+$$('#brainSeg button').forEach(b => b.addEventListener('click', () => pickBrain(b.dataset.brain)));
+function renderMemories() {
+  const ul = $('#memList');
+  ul.innerHTML = memories.length ? memories.map((m, i) => `<li><span>${esc(m)}</span><button type="button" data-i="${i}" aria-label="Forget this">✕</button></li>`).join('') : '<li class="muted">Nothing yet. Tell Shobot what you like!</li>';
+}
+$('#memList').addEventListener('click', e => { const b = e.target.closest('button[data-i]'); if (b) { memories.splice(+b.dataset.i, 1); saveMemories(); renderMemories(); } });
+$('#forgetAll').addEventListener('click', e => {
+  if (e.target.dataset.armed) { memories = []; saveMemories(); renderMemories(); e.target.textContent = 'Forget everything'; delete e.target.dataset.armed; return; }
+  e.target.dataset.armed = '1'; e.target.textContent = 'Tap again to forget';
+  setTimeout(() => { e.target.textContent = 'Forget everything'; delete e.target.dataset.armed; }, 3000);
 });
 $('#clearChatBtn').addEventListener('click', () => { $('#settingsModal').hidden = true; if (currentId) deleteChat(currentId); else toast('This chat is already empty'); });
 $('#installTip').addEventListener('click', () => ($('#installText').hidden = false));

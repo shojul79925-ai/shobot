@@ -445,6 +445,18 @@
   <div class="modal-card left">
     <h3>Settings</h3>
     <label class="field">Your name <input id="userName" placeholder="Shokul"></label>
+    <div class="field">Shobot's brain
+      <div class="seg full" id="brainSeg">
+        <button type="button" data-brain="fast">Fast ⚡</button>
+        <button type="button" data-brain="smart">Smart 🧠</button>
+        <button type="button" data-brain="genius">Genius 🌟</button>
+      </div>
+      <span class="muted small" id="brainInfo"></span>
+    </div>
+    <div class="field">What Shobot remembers about you
+      <ul class="mem-list" id="memList"></ul>
+      <button type="button" class="btn ghost sm danger" id="forgetAll">Forget everything</button>
+    </div>
     <label class="check"><input type="checkbox" id="voiceOn"> Shobot reads answers out loud</label>
     <label class="check"><input type="checkbox" id="soundOn" checked> Little beep sounds</label>
     <div class="row">

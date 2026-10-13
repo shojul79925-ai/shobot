@@ -563,3 +563,11 @@ body.in-claude .nav{padding-bottom:6px}
   .sky{display:none}
 }
 textarea:focus-visible,input:not([type=checkbox]):not([type=range]):not([type=color]):focus-visible{outline:none}
+
+/* settings: memory list */
+.modal-card{max-height:90vh;overflow:auto}
+.mem-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;max-height:180px;overflow:auto;font-weight:600}
+.mem-list li{display:flex;gap:8px;align-items:center;background:var(--bg2);border-radius:10px;padding:6px 6px 6px 10px;font-size:14px}
+.mem-list li span{flex:1;min-width:0;overflow-wrap:anywhere}
+.mem-list li button{border:0;background:var(--panel2);border-radius:8px;width:28px;height:28px;flex:none}
+.field .muted.small{font-weight:600}

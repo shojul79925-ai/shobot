@@ -6,13 +6,18 @@
 // Optional: GEMINI_MODEL to pick a specific Gemini model.
 
 const GATEWAY = 'https://ai-gateway.vercel.sh/v1/messages';
+// Brain levels the user picks in Shobot's settings: fast / smart / genius.
+const HAIKU = 'anthropic/claude-haiku-5.5', SONNET = 'anthropic/claude-sonnet-5.5', OPUS = 'anthropic/claude-opus-5.5';
 const GW_MODELS = {
-  chat: ['anthropic/claude-haiku-5.5', 'anthropic/claude-haiku-4.5'],
-  music: ['anthropic/claude-haiku-5.5', 'anthropic/claude-haiku-4.5'],
-  code: ['anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5'],
-  '3d': ['anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5'],
+  fast: { chat: [HAIKU], music: [HAIKU], code: [SONNET, HAIKU], '3d': [SONNET, HAIKU] },
+  smart: { chat: [SONNET, HAIKU], music: [HAIKU], code: [SONNET, HAIKU], '3d': [SONNET, HAIKU] },
+  genius: { chat: [OPUS, SONNET], music: [SONNET, HAIKU], code: [OPUS, SONNET], '3d': [OPUS, SONNET] },
 };
-const GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash'];
+const GEMINI_MODELS = {
+  fast: ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-2.5-flash'],
+  smart: ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-2.5-flash'],
+  genius: ['gemini-3.8-pro', 'gemini-3-pro', 'gemini-2.5-pro', 'gemini-3.8-flash'],
+};
 const MAX_TOKENS = { chat: 1500, music: 1500, code: 16000, '3d': 24000 };
 const IMG_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
@@ -68,9 +73,9 @@ function gateway(token, body) {
     body: JSON.stringify(body),
   });
 }
-async function streamGateway(token, mode, system, messages, write) {
+async function streamGateway(token, mode, system, messages, write, brain = 'smart') {
   let lastErr = 'AI error';
-  for (const model of GW_MODELS[mode]) {
+  for (const model of (GW_MODELS[brain] || GW_MODELS.smart)[mode]) {
     const r = await gateway(token, { model, max_tokens: MAX_TOKENS[mode], system, messages, stream: true });
     if (!r.ok || !r.body) {
       const j = await r.json().catch(() => ({}));
@@ -95,7 +100,7 @@ function toGemini(messages) {
       b.type === 'image' ? { inline_data: { mime_type: b.source.media_type, data: b.source.data } } : { text: b.text }),
   }));
 }
-function geminiRequest(key, model, mode, system, messages, stream) {
+function geminiRequest(key, model, mode, system, messages, stream, search) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:${stream ? 'streamGenerateContent?alt=sse' : 'generateContent'}`;
   return fetch(url, {
     method: 'POST',
@@ -104,14 +109,17 @@ function geminiRequest(key, model, mode, system, messages, stream) {
       systemInstruction: { parts: [{ text: system }] },
       contents: toGemini(messages),
       generationConfig: { maxOutputTokens: MAX_TOKENS[mode] },
+      ...(search ? { tools: [{ google_search: {} }] } : {}),
     }),
   });
 }
-async function streamGemini(key, mode, system, messages, write) {
-  const models = [process.env.GEMINI_MODEL, ...GEMINI_MODELS].filter(Boolean);
+async function streamGemini(key, mode, system, messages, write, brain = 'smart') {
+  const models = [process.env.GEMINI_MODEL, ...(GEMINI_MODELS[brain] || GEMINI_MODELS.smart)].filter(Boolean);
   let lastErr = 'AI error';
   for (const model of models) {
-    const r = await geminiRequest(key, model, mode, system, messages, true);
+    // In chat, let Gemini look things up on Google so answers about today's world are right.
+    let r = await geminiRequest(key, model, mode, system, messages, true, mode === 'chat');
+    if (!r.ok && mode === 'chat' && (r.status === 400 || r.status === 429)) r = await geminiRequest(key, model, mode, system, messages, true, false);
     if (!r.ok || !r.body) {
       const j = await r.json().catch(() => ({}));
       lastErr = j?.error?.message || `gemini ${r.status}`;
@@ -153,6 +161,7 @@ module.exports = async (req, res) => {
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
   body = body || {};
   const mode = MAX_TOKENS[body.mode] ? body.mode : 'chat';
+  const brain = ['fast', 'smart', 'genius'].includes(body.brain) ? body.brain : 'smart';
   const system = typeof body.system === 'string' ? body.system.slice(0, 20000) : 'You are Shobot, a friendly robot helper.';
   const messages = clean(body.messages);
   if (!messages.length) return res.status(400).json({ error: 'No message' });
@@ -165,8 +174,8 @@ module.exports = async (req, res) => {
   let err;
   try {
     err = provider === 'gemini'
-      ? await streamGemini(geminiKey, mode, system, messages, write)
-      : await streamGateway(gwToken, mode, system, messages, write);
+      ? await streamGemini(geminiKey, mode, system, messages, write, brain)
+      : await streamGateway(gwToken, mode, system, messages, write, brain);
   } catch (e) {
     if (started) { res.write('\n[[error:connection dropped]]'); return res.end(); }
     err = e.message || 'AI error';
