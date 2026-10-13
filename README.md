@@ -13,5 +13,6 @@ Shokul's own AI robot helper.
 ## Deploy
 
 Import this repository on [Vercel](https://vercel.com/new) and press **Deploy**. No settings needed.
-The AI brain (`api/chat.js`) uses the Vercel AI Gateway with the project's automatic OIDC token,
+The AI brain (`api/chat.js`) uses Google Gemini if a `GEMINI_API_KEY` environment variable is set.
+Otherwise it uses the Vercel AI Gateway with the project's automatic OIDC token,
 or an `AI_GATEWAY_API_KEY` environment variable if you add one.
