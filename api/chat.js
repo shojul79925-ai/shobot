@@ -124,7 +124,7 @@ async function streamGemini(key, mode, system, messages, write, brain = 'smart',
     if (!r.ok && canSearch && (r.status === 400 || r.status === 429)) r = await geminiRequest(key, model, mode, system, messages, true, false);
     if (!r.ok || !r.body) {
       const j = await r.json().catch(() => ({}));
-      lastErr = j?.error?.message || `gemini ${r.status}`; info.status = r.status; info.model = model;
+      lastErr = j?.error?.message || `gemini ${r.status}`; info.status = r.status; info.model = model; (info.tries ||= []).push(`${model}: ${r.status} ${lastErr.slice(0, 120)}`);
       if ([400, 401, 403].includes(r.status) && !/model/i.test(lastErr)) break; // bad key: stop
       continue; // model missing or busy: try the next one
     }
@@ -136,7 +136,7 @@ async function streamGemini(key, mode, system, messages, write, brain = 'smart',
       if (ev?.error) write(`\n[[error:${ev.error.message || 'stream error'}]]`);
     });
     info.model = model; info.chars = wrote;
-    if (!wrote) { lastErr = `empty answer from ${model} (${info.finish || 'no reason'})`; continue; } // e.g. thinking used up the budget: try next model
+    if (!wrote) { lastErr = `empty answer from ${model} (${info.finish || 'no reason'})`; (info.tries ||= []).push(lastErr); continue; } // e.g. thinking used up the budget: try next model
     return null;
   }
   return lastErr;
