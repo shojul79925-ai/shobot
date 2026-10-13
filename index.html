@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#1b0f3a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Shobot">
+<title>Shobot</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='52' r='40' fill='%23ffd21f'/%3E%3Crect x='22' y='38' width='56' height='30' rx='15' fill='%235b2bd6'/%3E%3Cellipse cx='40' cy='53' rx='5' ry='7' fill='white'/%3E%3Cellipse cx='60' cy='53' rx='5' ry='7' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+
+<!-- ===== Shobot avatar template (cloned into every .shobot mount) ===== -->
+<template id="shobot-tpl">
+<svg class="av" viewBox="0 0 200 250" xmlns="http://www.w3.org/2000/svg" aria-label="Shobot robot">
+  <defs>
+    <linearGradient id="beamG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#19e3a0" stop-opacity="0"/>
+      <stop offset="1" stop-color="#19e3a0" stop-opacity=".85"/>
+    </linearGradient>
+  </defs>
+  <!-- teleport beam -->
+  <g class="av-beam">
+    <polygon points="40,0 160,0 185,235 15,235" fill="url(#beamG)"/>
+    <line class="av-beam-l1" x1="70" y1="10" x2="62" y2="80" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+    <line class="av-beam-l2" x1="135" y1="30" x2="142" y2="100" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+    <ellipse cx="100" cy="236" rx="78" ry="12" fill="#19e3a0"/>
+  </g>
+  <ellipse class="av-shadow" cx="100" cy="238" rx="40" ry="7" fill="#000" opacity=".22"/>
+
+  <!-- orbiting planet (spin mode) -->
+  <g class="av-orbit">
+    <ellipse cx="100" cy="150" rx="92" ry="22" fill="none" stroke="#19e3a0" stroke-width="3" stroke-dasharray="6 8"/>
+    <g class="av-planet"><circle cx="0" cy="0" r="9" fill="#ff8a1f"/><ellipse cx="0" cy="0" rx="15" ry="4" fill="none" stroke="#fff" stroke-width="2"/></g>
+  </g>
+
+  <g class="av-bot">
+    <!-- jet flame -->
+    <g class="av-jet">
+      <path d="M90 205 Q100 240 110 205 Z" fill="#ff8a1f"/>
+      <path d="M95 205 Q100 226 105 205 Z" fill="#ffd21f"/>
+    </g>
+    <!-- body -->
+    <g class="av-body">
+      <path d="M66 132 Q100 118 134 132 Q144 168 100 210 Q56 168 66 132 Z" fill="#6c3cf0"/>
+      <path d="M100 124 Q120 124 134 132 Q144 168 100 210 Z" fill="#5726d6" opacity=".55"/>
+      <rect x="83" y="142" width="34" height="27" rx="7" fill="#fff"/>
+      <rect class="av-screen" x="87" y="146" width="26" height="19" rx="4" fill="#ffd21f"/>
+      <text x="100" y="161" text-anchor="middle" font-family="Fredoka, sans-serif" font-weight="700" font-size="15" fill="#6c3cf0">S</text>
+      <path d="M86 182 H98 V194 H110" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <!-- arms (floating) -->
+    <g class="av-arm av-arm-l">
+      <rect x="40" y="132" width="22" height="44" rx="11" fill="#ffd21f"/>
+      <path d="M46 150 L51 156 L56 150" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g class="av-laptop">
+      <path d="M68 150 L132 150 L128 186 L72 186 Z" fill="#2a1260"/>
+      <circle cx="100" cy="168" r="6" fill="#19e3a0"/>
+      <rect x="60" y="186" width="80" height="7" rx="3.5" fill="#cfc2f5"/>
+    </g>
+    <g class="av-arm av-arm-r">
+      <g class="av-hammer">
+        <rect x="146" y="166" width="6" height="34" rx="3" fill="#a0672f"/>
+        <rect x="134" y="196" width="30" height="13" rx="3" fill="#c9c2e6"/>
+      </g>
+      <rect x="138" y="132" width="22" height="44" rx="11" fill="#ffd21f"/>
+      <path d="M144 150 L149 156 L154 150" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <!-- head -->
+    <g class="av-head">
+      <g class="av-antenna">
+        <line x1="100" y1="44" x2="100" y2="26" stroke="#6c3cf0" stroke-width="5" stroke-linecap="round"/>
+        <circle class="av-bulb" cx="100" cy="21" r="7" fill="#19e3a0"/>
+      </g>
+      <path class="av-band" d="M46 84 Q46 20 100 18 Q154 20 154 84" fill="none" stroke="#6c3cf0" stroke-width="9" stroke-linecap="round"/>
+      <!-- ear pods -->
+      <g class="av-ear av-ear-l"><circle cx="49" cy="88" r="16" fill="#6c3cf0"/><circle cx="47" cy="88" r="11" fill="#ff8a1f"/><path d="M50 82 L44 88 L50 94" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></g>
+      <g class="av-ear av-ear-r"><circle cx="151" cy="88" r="16" fill="#6c3cf0"/><circle cx="153" cy="88" r="11" fill="#ff8a1f"/><path d="M150 82 L156 88 L150 94" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></g>
+      <ellipse cx="100" cy="86" rx="52" ry="45" fill="#ffd21f"/>
+      <path d="M62 62 Q80 44 104 44" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" opacity=".9"/>
+      <g class="av-hat">
+        <path d="M50 64 Q52 22 100 20 Q148 22 150 64 Z" fill="#ff8a1f"/>
+        <rect x="94" y="22" width="12" height="40" rx="5" fill="#ffb84d"/>
+        <rect x="42" y="58" width="116" height="10" rx="5" fill="#ffb84d"/>
+      </g>
+      <rect x="58" y="66" width="84" height="44" rx="22" fill="#5b2bd6"/>
+      <rect x="63" y="70" width="74" height="36" rx="18" fill="#d21ee0"/>
+      <g class="av-face">
+        <g class="av-eyes">
+          <ellipse class="av-eye" cx="86" cy="86" rx="6.5" ry="8.5" fill="#fff"/>
+          <ellipse class="av-eye" cx="114" cy="86" rx="6.5" ry="8.5" fill="#fff"/>
+        </g>
+        <g class="av-happy-eyes">
+          <path d="M79 89 Q86 79 93 89" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+          <path d="M107 89 Q114 79 121 89" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+        </g>
+        <rect class="av-mouth" x="94" y="97" width="12" height="3.5" rx="1.75" fill="#fff"/>
+        <path class="av-smile" d="M93 96 Q100 103 107 96" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- extras -->
+  <g class="av-sparkles">
+    <path d="M30 40 l4 10 l10 4 l-10 4 l-4 10 l-4 -10 l-10 -4 l10 -4z" fill="#ffd21f"/>
+    <path d="M168 54 l3 7 l7 3 l-7 3 l-3 7 l-3 -7 l-7 -3 l7 -3z" fill="#fff"/>
+    <circle cx="172" cy="130" r="5" fill="#19e3a0"/>
+    <circle cx="24" cy="120" r="4" fill="#ff8a1f"/>
+  </g>
+  <g class="av-think">
+    <circle cx="150" cy="40" r="5" fill="#fff"/><circle cx="166" cy="26" r="7" fill="#fff"/><circle cx="184" cy="10" r="9" fill="#fff"/>
+  </g>
+  <g class="av-zzz" font-family="Fredoka, sans-serif" font-weight="700" fill="#fff">
+    <text x="148" y="46" font-size="18">z</text><text x="162" y="30" font-size="22">z</text><text x="178" y="14" font-size="26">Z</text>
+  </g>
+  <g class="av-sparks">
+    <path d="M150 222 l3 7 l7 3 l-7 3 l-3 7 l-3 -7 l-7 -3 l7 -3z" fill="#ffd21f"/>
+    <path d="M176 210 l2 5 l5 2 l-5 2 l-2 5 l-2 -5 l-5 -2 l5 -2z" fill="#fff"/>
+    <circle cx="132" cy="214" r="3" fill="#ff8a1f"/>
+  </g>
+  <g class="av-code" font-family="JetBrains Mono, monospace" font-weight="700" fill="#19e3a0">
+    <text x="14" y="70" font-size="18">&lt;/&gt;</text><text x="156" y="56" font-size="18">{ }</text><text x="20" y="128" font-size="14" fill="#ffd21f">01</text>
+  </g>
+  <g class="av-notes" fill="#fff">
+    <text x="22" y="60" font-size="22">♪</text><text x="164" y="44" font-size="26">♫</text>
+  </g>
+</svg>
+</template>
+
+<div class="sky" id="sky" aria-hidden="true"></div>
+<canvas class="confetti" id="confetti" aria-hidden="true"></canvas>
+<div id="app">
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="shobot shobot-mini" data-shobot></div>
+      <div>
+        <div class="brand-name">Shobot</div>
+        <div class="brand-status"><span class="dot" id="aiDot"></span><span id="aiStatus">waking up…</span></div>
+      </div>
+    </div>
+    <div class="mode-switch" role="tablist" aria-label="Mode">
+      <button data-go="chat" class="ms-btn">💬 Chat</button>
+      <button data-go="code" class="ms-btn">⌨️ Code</button>
+    </div>
+    <button class="icon-btn" id="settingsBtn" aria-label="Settings">⚙️</button>
+  </header>
+
+  <!-- Side / bottom nav -->
+  <nav class="nav" aria-label="Main">
+    <button class="nav-btn" data-go="chat"><span>💬</span><b>Chat</b></button>
+    <button class="nav-btn" data-go="code"><span>⌨️</span><b>Code</b></button>
+    <button class="nav-btn" data-go="studio3d"><span>🧊</span><b>3D</b></button>
+    <button class="nav-btn" data-go="music"><span>🎹</span><b>Music</b></button>
+    <button class="nav-btn" data-go="test"><span>📱</span><b>Test</b></button>
+    <button class="nav-btn" data-go="phone"><span>🔐</span><b>Phone</b></button>
+    <button class="nav-btn" data-go="me"><span>🤖</span><b>Shobot</b></button>
+  </nav>
+
+  <main class="views">
+
+    <!-- ========== CHAT ========== -->
+    <section class="view" id="view-chat">
+      <div class="chat-wrap">
+        <div class="chat-bar">
+          <button type="button" class="btn ghost sm" id="chatsBtn" aria-label="Your chats">🗂 Chats</button>
+          <span class="chat-title" id="chatTitle">New chat</span>
+          <button type="button" class="btn sm" id="newChatBtn">＋ New chat</button>
+        </div>
+        <div class="chat-buddy" id="chatBuddy" hidden><div class="shobot shobot-small" data-shobot></div></div>
+        <div class="chat-scroll" id="chatScroll">
+          <div class="chat-hero" id="chatHero">
+            <div class="shobot shobot-hero" data-shobot></div>
+            <h1>Hi, I'm Shobot!</h1>
+            <p>Ask me anything, or tell me to build something.</p>
+            <div class="chips">
+              <button class="chip" data-prompt="Tell me a fun fact about space 🚀">Space fact</button>
+              <button class="chip" data-prompt="Help me plan a Roblox game idea">Game idea</button>
+              <button class="chip" data-prompt="Build me a 3D rocket" data-target="3d">Build a 3D rocket</button>
+              <button class="chip" data-prompt="Make me a happy dance beat" data-target="music">Make a beat</button>
+              <button class="chip" data-prompt="Make a website for a cat café" data-target="code">Code a website</button>
+              <button class="chip" data-prompt="Shobot, dance!">Dance!</button>
+            </div>
+          </div>
+          <div class="messages" id="messages"></div>
+        </div>
+        <div class="talk-bar" id="talkBar" hidden><span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><span id="talkText">Listening…</span><button type="button" class="btn ghost sm" id="talkStop">Stop talking</button></div>
+        <div class="attach-tray" id="attachTray" hidden></div>
+        <div class="attach-menu" id="attachMenu" hidden>
+          <button type="button" id="attachCamera">📷 Take a photo</button>
+          <button type="button" id="attachPhotos">🖼️ Choose pictures</button>
+        </div>
+        <input type="file" id="camInput" accept="image/*" capture="environment" hidden>
+        <input type="file" id="picInput" accept="image/*" multiple hidden>
+        <form class="composer" id="chatForm">
+          <button type="button" class="icon-btn" id="attachBtn" title="Add a picture" aria-label="Add a picture">📎</button>
+          <button type="button" class="icon-btn" id="micBtn" title="Talk to Shobot" aria-label="Talk to Shobot">🎙️</button>
+          <textarea id="chatInput" rows="1" placeholder="Message Shobot…" autocomplete="off"></textarea>
+          <button class="send-btn" id="sendBtn" type="submit" aria-label="Send">➤</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ========== CODE ========== -->
+    <section class="view" id="view-code">
+      <div class="code-wrap">
+        <div class="toolbar">
+          <div class="seg" id="fileTabs">
+            <button data-file="html" class="on">HTML</button>
+            <button data-file="css">CSS</button>
+            <button data-file="js">JS</button>
+          </div>
+          <div class="seg mobile-only" id="codePaneToggle">
+            <button data-pane="editor" class="on">Editor</button>
+            <button data-pane="preview">Preview</button>
+          </div>
+          <div class="tb-right">
+            <select id="templateSel" aria-label="Templates">
+              <option value="">📄 Templates</option>
+              <option value="hello">Hello page</option>
+              <option value="game">Click game</option>
+              <option value="clock">Neon clock</option>
+              <option value="todo">To-do list</option>
+            </select>
+            <button class="btn" id="runBtn">▶ Run</button>
+            <button class="btn ghost" id="toTestBtn">📱 Test</button>
+            <button class="btn ghost" id="dlCodeBtn">⬇ Save</button>
+          </div>
+        </div>
+        <div class="code-panes" id="codePanes">
+          <div class="pane editor-pane">
+            <div class="editor">
+              <pre class="gutter" id="gutter">1</pre>
+              <textarea id="editor" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off"></textarea>
+            </div>
+          </div>
+          <div class="pane preview-pane">
+            <iframe id="preview" title="Preview" sandbox="allow-scripts allow-modals allow-forms allow-popups"></iframe>
+          </div>
+        </div>
+        <div class="code-ai">
+          <div class="code-log" id="codeLog"></div>
+          <form class="composer slim" id="codeForm">
+            <div class="shobot shobot-tiny" data-shobot></div>
+            <input id="codeInput" placeholder="Tell Shobot what to code… e.g. 'a snake game'" autocomplete="off">
+            <button class="send-btn" id="codeSend" type="submit" aria-label="Ask">➤</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 3D STUDIO ========== -->
+    <section class="view" id="view-studio3d">
+      <div class="studio">
+        <div class="studio-stage" id="stage3d">
+          <div class="stage-loading" id="stageLoading">Loading 3D Studio…</div>
+          <div class="stage-hint">Drag to look around · tap a shape to pick it</div>
+        </div>
+        <aside class="studio-panel">
+          <h3>Add shape</h3>
+          <div class="grid-btns" id="shapeBtns">
+            <button data-shape="box">🟪 Box</button>
+            <button data-shape="sphere">🔵 Ball</button>
+            <button data-shape="cylinder">🥫 Tube</button>
+            <button data-shape="cone">🔺 Cone</button>
+            <button data-shape="torus">🍩 Donut</button>
+            <button data-shape="capsule">💊 Capsule</button>
+            <button data-shape="plane">⬜ Floor</button>
+            <button data-shape="roundbox">🧱 Soft box</button>
+            <button data-shape="hemisphere">⛺ Dome</button>
+            <button data-shape="pyramid">🔼 Pyramid</button>
+            <button data-shape="wedge">📐 Ramp</button>
+            <button data-shape="gem">💎 Gem</button>
+            <button data-shape="ring">⭕ Ring</button>
+            <button data-shape="robot">🤖 Shobot</button>
+          </div>
+          <h3>Edit <span class="muted small">· picked: <b id="partName">nothing</b></span></h3>
+          <div class="seg full" id="tModes">
+            <button data-tmode="translate" class="on">Move</button>
+            <button data-tmode="rotate">Turn</button>
+            <button data-tmode="scale">Size</button>
+          </div>
+          <div class="row">
+            <label class="color-pick">Color <input type="color" id="objColor" value="#ffd21f"></label>
+            <select id="finishSel" aria-label="Finish"><option value="plastic">Plastic</option><option value="matte">Matte</option><option value="metal">Metal</option><option value="glass">Glass</option><option value="glow">Glow</option><option value="rubber">Rubber</option></select>
+            <button class="btn ghost sm" id="dupBtn">Copy</button>
+            <button class="btn ghost sm danger" id="delBtn">Delete</button>
+          </div>
+          <div class="row">
+            <button class="btn ghost sm" id="wireBtn">Wireframe</button>
+            <button class="btn ghost sm" id="clear3dBtn">Clear all</button>
+          </div>
+          <h3>Ask Shobot to build</h3>
+          <form class="mini-form" id="build3dForm">
+            <input id="build3dInput" placeholder="e.g. a race car" autocomplete="off">
+            <button class="btn" id="build3dBtn">Build</button>
+          </form>
+          <div class="row">
+            <label class="small" for="detailSel">Detail</label>
+            <select id="detailSel"><option value="simple">Simple</option><option value="detailed" selected>Detailed</option><option value="super">Super detailed</option></select>
+            <span class="muted small"><b id="partCount">0</b> parts</span>
+          </div>
+          <p class="muted small" id="studioStatus">Shobot builds part by part while you watch.</p>
+          <h3>Export</h3>
+          <div class="row">
+            <button class="btn ghost sm" id="glbBtn">.GLB</button>
+            <button class="btn ghost sm" id="stlBtn">.STL</button>
+            <button class="btn ghost sm" id="pngBtn">Picture</button>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ========== MUSIC ========== -->
+    <section class="view" id="view-music">
+      <div class="music">
+        <div class="toolbar">
+          <button class="btn" id="playBtn">▶ Play</button>
+          <label class="tempo">BPM <input type="range" id="bpm" min="60" max="180" value="110"><b id="bpmVal">110</b></label>
+          <select id="instSel" aria-label="Instrument">
+            <option value="synth">🎛 Synth</option>
+            <option value="piano">🎹 Piano</option>
+            <option value="pluck">🎸 Pluck</option>
+            <option value="bass">🔊 Bass</option>
+            <option value="bell">🔔 Bell</option>
+          </select>
+          <div class="tb-right">
+            <button class="btn ghost" id="recBtn">⏺ Record</button>
+            <button class="btn ghost" id="clearBeatBtn">Clear</button>
+          </div>
+        </div>
+        <div class="seq-scroll"><div class="seq" id="seq"></div></div>
+        <form class="mini-form wide" id="beatForm">
+          <div class="shobot shobot-tiny" data-shobot></div>
+          <input id="beatInput" placeholder="Ask Shobot for a beat… e.g. 'chill lo-fi'" autocomplete="off">
+          <button class="btn">Make it</button>
+        </form>
+        <div class="piano" id="piano"></div>
+        <div class="rec-out" id="recOut"></div>
+      </div>
+    </section>
+
+    <!-- ========== TEST LAB ========== -->
+    <section class="view" id="view-test">
+      <div class="test">
+        <div class="toolbar">
+          <div class="seg" id="deviceSeg">
+            <button data-dev="phone" class="on">📱 Phone</button>
+            <button data-dev="ipad">📲 iPad</button>
+            <button data-dev="computer">💻 Computer</button>
+            <button data-dev="all">✨ All</button>
+          </div>
+          <div class="tb-right">
+            <button class="btn ghost" id="rotateBtn">🔄 Rotate</button>
+            <button class="btn ghost" id="reloadTestBtn">↻ Reload</button>
+          </div>
+        </div>
+        <form class="mini-form wide" id="urlForm">
+          <select id="testSrc" aria-label="What to test">
+            <option value="code">My Code project</option>
+            <option value="url">A website link</option>
+          </select>
+          <input id="testUrl" placeholder="https://… (some sites block being shown inside)" autocomplete="off">
+          <button class="btn">Load</button>
+        </form>
+        <div class="devices" id="devices"></div>
+      </div>
+    </section>
+
+    <!-- ========== PHONE CONTROL ========== -->
+    <section class="view" id="view-phone">
+      <div class="phone">
+        <div class="phone-head">
+          <div class="shobot shobot-small" data-shobot></div>
+          <div>
+            <h2>Phone controls</h2>
+            <p>Shobot <b>always asks you first</b>, every single time, before it touches your phone. Nothing is remembered.</p>
+            <p class="muted small" id="phoneNote"></p>
+          </div>
+        </div>
+        <div class="cards" id="abilityCards"></div>
+        <div class="phone-out" id="phoneOut">
+          <video id="camVideo" playsinline muted></video>
+          <canvas id="camShot"></canvas>
+          <div class="meter" id="micMeter"><i></i></div>
+          <div id="phoneInfo"></div>
+        </div>
+        <h3 class="log-h">Permission history</h3>
+        <ul class="perm-log" id="permLog"><li class="muted">No requests yet.</li></ul>
+      </div>
+    </section>
+
+    <!-- ========== SHOBOT (avatar) ========== -->
+    <section class="view" id="view-me">
+      <div class="me">
+        <div class="me-stage">
+          <div class="shobot shobot-big" data-shobot></div>
+        </div>
+        <h2>Shobot's moves</h2>
+        <div class="grid-btns moves" id="moves">
+          <button data-anim="idle">😌 Float</button>
+          <button data-anim="wave">👋 Wave</button>
+          <button data-anim="happy">😄 Happy</button>
+          <button data-anim="talking">🗣 Talk</button>
+          <button data-anim="thinking">🤔 Think</button>
+          <button data-anim="surprised">😮 Wow</button>
+          <button data-anim="dance">🕺 Dance</button>
+          <button data-anim="spin">🪐 Orbit</button>
+          <button data-anim="teleport">✨ Beam in</button>
+          <button data-anim="sleep">😴 Sleep</button>
+        </div>
+        <p class="muted center">Shobot's eyes follow your finger or mouse. If you leave it alone for a while, it falls asleep.</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- Permission dialog -->
+<div class="modal" id="permModal" hidden>
+  <div class="modal-card">
+    <div class="shobot shobot-small" data-shobot></div>
+    <h3 id="permTitle">Shobot wants permission</h3>
+    <p id="permText"></p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="permDeny">Don't allow</button>
+      <button class="btn" id="permAllow">Allow this time</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings dialog -->
+<div class="modal" id="settingsModal" hidden>
+  <div class="modal-card left">
+    <h3>Settings</h3>
+    <label class="field">Your name <input id="userName" placeholder="Shokul"></label>
+    <label class="check"><input type="checkbox" id="voiceOn"> Shobot reads answers out loud</label>
+    <label class="check"><input type="checkbox" id="soundOn" checked> Little beep sounds</label>
+    <div class="row">
+      <button class="btn ghost sm danger" id="clearChatBtn">Delete this chat</button>
+      <button class="btn ghost sm" id="installTip">Add to Home Screen?</button>
+    </div>
+    <p class="muted small" id="installText" hidden>On iPhone / iPad: tap the Share button in Safari, then "Add to Home Screen". On Android: tap the ⋮ menu, then "Install app".</p>
+    <div class="modal-actions"><button class="btn" id="settingsClose">Done</button></div>
+  </div>
+</div>
+
+<!-- Chats drawer -->
+<div class="drawer" id="chatDrawer" hidden>
+  <div class="drawer-panel" role="dialog" aria-label="Your chats">
+    <div class="drawer-head"><h3>Your chats</h3><button type="button" class="icon-btn" id="drawerClose" aria-label="Close">✕</button></div>
+    <button type="button" class="btn" id="drawerNew">＋ New chat</button>
+    <ul class="chat-list" id="chatList"></ul>
+  </div>
+</div>
+
+<!-- Voice tip -->
+<div class="modal" id="voiceTip" hidden>
+  <div class="modal-card">
+    <div class="shobot shobot-small" data-shobot></div>
+    <h3>Talk to Shobot</h3>
+    <p>On this page, tap the box below, then tap the <b>🎤 microphone on your keyboard</b> and speak. Your words turn into a message for Shobot.</p>
+    <p class="muted small">Hands-free talking, where Shobot listens and answers out loud by itself, works on the Vercel version of Shobot.</p>
+    <div class="modal-actions"><button class="btn" id="voiceTipOk">OK, let's talk</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
