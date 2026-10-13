@@ -213,7 +213,7 @@ module.exports = async (req, res) => {
       const j = r ? await r.json().catch(() => ({})) : {};
       const d = j?.data || null;
       return res.status(200).json({ provider, key: d && {
-        label: d.label, limit: d.limit, limit_remaining: d.limit_remaining, limit_reset: d.limit_reset,
+        label: /^sk-/i.test(d.label || '') ? 'shobot' : d.label, limit: d.limit, limit_remaining: d.limit_remaining, limit_reset: d.limit_reset,
         usage: d.usage, usage_daily: d.usage_daily, usage_weekly: d.usage_weekly, usage_monthly: d.usage_monthly,
       }, error: d ? undefined : (j?.error?.message || 'Could not read usage') });
     }
