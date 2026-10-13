@@ -1685,21 +1685,6 @@ $('#openUsageBtn').addEventListener('click', () => { $('#settingsModal').hidden 
 $('#meUsageBtn').addEventListener('click', () => go('usage'));
 
 /* ---------------- ME (avatar moves + every skill) ---------------- */
-(function buildSkills() {
-  const groups = [['b_', '🧊 Building 3D'], ['c_', '⌨️ Coding'], ['m_', '🎧 Music'], ['t_', '💭 Thinking'], ['team_', '👥 Team'], ['p_', '📱 Phone helpers']];
-  const icon = A => [A.hand, A.front, A.fx].find(x => x && !x.startsWith('svg:') && x !== 'piece')?.match(/\p{Extended_Pictographic}\uFE0F?/u)?.[0]
-    || { 'svg:hammer': '🔨', 'svg:torch': '🔥', 'svg:wrench': '🔧', 'svg:brush': '🖌️', 'svg:magnifier': '🔍', 'svg:laptop': '💻', 'svg:blueprint': '📐', 'svg:deck': '🎛️', 'svg:bug': '🐞' }[A.hand || A.front] || '🧱';
-  const ids = Object.keys(ACTS);
-  $('#skillCount').textContent = `· ${ids.length}`;
-  const shapes = ['box', 'sphere', 'cylinder', 'cone', 'torus', 'gem', 'lathe', 'extrude'];
-  $('#skills').innerHTML = groups.map(([pre, title]) => `<div class="skill-group"><h3>${title}</h3><div class="skill-list">${ids.filter(id => id.startsWith(pre) && !(pre === 't_' && id.startsWith('team_'))).map(id => `<button type="button" data-act="${id}"><span>${icon(ACTS[id])}</span>${esc(actLabel(id, { part: 'rocket' }))}</button>`).join('')}</div></div>`).join('');
-  $('#skills').addEventListener('click', e => {
-    const b = e.target.closest('[data-act]'); if (!b) return;
-    const id = b.dataset.act, i = ids.indexOf(id);
-    Avatar.show(id, { part: 'rocket', shape: shapes[i % shapes.length], color: PALETTE[i % PALETTE.length] }, 4000);
-    $('.me-stage').scrollIntoView({ behavior: 'smooth', block: 'center' });
-  });
-})();
 $$('#moves button').forEach(b => b.addEventListener('click', () => {
   const a = b.dataset.anim;
   if (a === 'idle') { Avatar.temp = null; Avatar.set('idle'); return; }
