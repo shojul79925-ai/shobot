@@ -47,14 +47,69 @@ function beep(kind = 'send') {
 }
 
 /* ---------------- avatar ---------------- */
+// Each avatar on screen has its own clock, its own idle fidgets and picks its own
+// work scenes, so two Shobots never move in lockstep.
+const SCENES = {
+  building: ['hammer', 'weld', 'wrench', 'plan', 'carry', 'paint'],
+  coding: ['type', 'type', 'think', 'debug'],
+  djing: ['scratch', 'hype', 'deck'],
+};
+const FIDGETS = ['look', 'hop', 'stretch', 'wave', 'twirl', 'look'];
+const rnd = (a, b) => a + Math.random() * (b - a);
+const pick = (list, not) => { const l = list.filter(x => x !== not); return l[Math.floor(Math.random() * l.length)] || list[0]; };
+const Look = {
+  all: new Set(),
+  add(svg) {
+    svg.style.setProperty('--av-d', `-${rnd(0, 6).toFixed(2)}s`);
+    this.all.add(svg); this.ensure();
+  },
+  setState(svg, s) {
+    if (svg._state === s) return;
+    svg._state = s; svg._fx = null;
+    svg._scene = SCENES[s] ? pick(SCENES[s]) : null;
+    svg._next = performance.now() + (SCENES[s] ? rnd(1800, 3200) : s === 'idle' ? rnd(2500, 9000) : 1e9);
+    this.paint(svg);
+  },
+  paint(svg) {
+    svg.setAttribute('class', ['av', svg._state, svg._scene && 'sc-' + svg._scene, svg._fx && 'fx-' + svg._fx].filter(Boolean).join(' '));
+  },
+  tick() {
+    const now = performance.now();
+    for (const svg of this.all) {
+      if (!svg.isConnected) { this.all.delete(svg); continue; }
+      if (now < svg._next) continue;
+      const st = svg._state;
+      if (SCENES[st]) { svg._scene = pick(SCENES[st], svg._scene); svg._next = now + rnd(2400, 4200); }
+      else if (st === 'idle') {
+        if (svg._fx) { svg._fx = null; svg._next = now + rnd(5000, 14000); }
+        else if (!document.hidden) { svg._fx = pick(FIDGETS); svg._next = now + 1650; }
+      } else svg._next = now + 1e9;
+      this.paint(svg);
+    }
+  },
+  ensure() { if (!this.timer) this.timer = setInterval(() => this.tick(), 300); },
+};
+// A Shobot with its own mood, e.g. the one inside a live work card.
+function ownAvatar(el, start = 'idle') {
+  el.appendChild($('#shobot-tpl').content.cloneNode(true));
+  const svg = el.querySelector('svg'); Look.add(svg);
+  const me = {
+    svg, base: start, temp: null, t: null,
+    apply() { Look.setState(svg, me.temp || me.base); },
+    set(s) { me.base = s; me.apply(); },
+    play(s, ms = 2000) { clearTimeout(me.t); me.temp = s; me.apply(); me.t = setTimeout(() => { me.temp = null; me.apply(); }, ms); },
+  };
+  me.apply();
+  return me;
+}
 const Avatar = {
-  svgs: [], base: 'teleport', temp: null, tempT: null, sleepT: null, jobs: 0,
+  svgs: [], base: 'teleport', temp: null, tempT: null, sleepT: null, jobs: 0, watch: 0,
   init() {
     $$('[data-shobot]').forEach(m => this.mount(m));
     setTimeout(() => { if (this.base === 'teleport') this.set('idle'); }, 1500);
     const look = e => {
       const p = e.touches ? e.touches[0] : e; if (!p) return;
-      this.svgs.forEach(svg => {
+      Look.all.forEach(svg => {
         if (!svg.isConnected) return;
         const r = svg.getBoundingClientRect(); if (!r.width) return;
         const dx = p.clientX - (r.left + r.width / 2), dy = p.clientY - (r.top + r.height * 0.35);
@@ -70,25 +125,33 @@ const Avatar = {
   },
   mount(el) {
     el.appendChild($('#shobot-tpl').content.cloneNode(true));
-    const svg = el.querySelector('svg'); this.svgs.push(svg);
-    svg.setAttribute('class', 'av ' + this.state());
+    const svg = el.querySelector('svg'); this.svgs.push(svg); Look.add(svg);
+    Look.setState(svg, this.state());
     return svg;
   },
   state() { return this.temp || this.base; },
   apply() {
     this.svgs = this.svgs.filter(s => s.isConnected);
-    const s = this.state(); this.svgs.forEach(svg => svg.setAttribute('class', 'av ' + s));
+    const s = this.state(); this.svgs.forEach(svg => Look.setState(svg, s));
   },
   set(s) { this.base = s; this.apply(); },
   play(s, ms = 2400) {
     clearTimeout(this.tempT); this.temp = s; this.apply();
     this.tempT = setTimeout(() => { this.temp = null; this.apply(); }, ms);
   },
-  // Long jobs: Shobot shows the job's animation until the last job finishes.
-  startJob(s) { this.jobs++; this.temp = null; this.set(s); },
-  endJob(celebrate = true) {
+  // Long jobs. With a live card, the card's own Shobot does the work and the
+  // other Shobots just watch (spinning gear). Without a card they do the job.
+  startJob(s, card) {
+    this.jobs++; this.temp = null;
+    if (card?.av) { this.watch++; card.av.set(s); }
+    this.set(this.watch ? 'busy' : s);
+    if (card) card._job = true;
+  },
+  endJob(celebrate = true, card) {
     this.jobs = Math.max(0, this.jobs - 1);
+    if (card?.av && card._job) { this.watch = Math.max(0, this.watch - 1); card._job = false; card.av.set('idle'); card.av.play(celebrate ? 'happy' : 'surprised', celebrate ? 2600 : 1400); }
     if (!this.jobs) { this.set('idle'); if (celebrate) this.play('happy', 1800); }
+    else if (!this.watch && this.base === 'busy') this.set('thinking');
   },
   poke() {
     if (this.base === 'sleep') { this.set('idle'); this.play('surprised', 900); }
@@ -102,13 +165,14 @@ const BASE = () => `You are Shobot, a friendly, upbeat robot AI helper made for 
 Personality: cheerful, curious, encouraging, a few emojis, explains things simply and clearly like a great teacher. Keep it kid-friendly and safe.
 Always reply in the same language the user writes in (for example Thai or English).
 Today is ${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
-Be genuinely smart: think carefully before answering, get facts right, show the steps for maths and homework, and check your answer. If you are not sure, say so honestly instead of guessing.${memories.length ? `
+Be genuinely smart: think carefully before answering, get facts and maths right, and check your answer. If you are not sure, say so honestly instead of guessing.${memories.length ? `
 Things you remember about ${userName()} from earlier chats:
 ${memories.map(m => '- ' + m).join('\n')}` : ''}`;
 
 const PROMPTS = {
   chat: () => `${BASE()}
-Answer questions directly and helpfully. Keep answers short (usually under 120 words) unless asked for detail. Use **bold** and \`code\` sparingly.
+Start EVERY reply with 1 to 3 short thinking steps, each on its own line written as [[think:...]] (under 8 words each, in the user's language), showing what you are working out, for example [[think:Checking what makes the sky blue]]. The user sees them as your thoughts. Then write the answer.
+Keep the answer SHORT: at most 2 short lines (about 35 words). Only write more when the user clearly asks for details, steps, a list, a story or a long explanation, and even then stay tight. For homework give the answer plus the key step, then offer the full steps. Use **bold** and \`code\` sparingly.
 You live inside the Shobot app. You can DO things by putting a tag at the very END of your reply (tags are hidden from the user):
 - Build a 3D model live: [[action:build3d|what to build]]
 - Make a music beat: [[action:beat|the mood or style]]
@@ -161,7 +225,7 @@ Keep it under 250 words unless your job truly needs more (code, a story chapter 
   review: () => `${BASE()}
 You are Checker, the quality-control robot on Shobot's team. Read the team's work and point out the most important mistakes, wrong facts, missing pieces and parts that don't fit together, as 3 to 6 short, specific bullet points. If everything is good, say so in one line.`,
   final: () => `${BASE()}
-You are Shobot, the leader of your helper-robot team. The team has finished. Combine their work into ONE excellent, well-organized answer for ${userName()}: keep the best parts, fix every problem the Checker found, remove repetition, and make it easy to read (short headings or lists when helpful). Do not list every agent; you may thank the team in one short line.
+You are Shobot, the leader of your helper-robot team. The team has finished. Begin with a 2-line summary of the result (the user sees only those 2 lines until they tap Read more). Then combine their work into ONE excellent, well-organized answer for ${userName()}: keep the best parts, fix every problem the Checker found, remove repetition, and make it easy to read (short headings or lists when helpful). Do not list every agent; you may thank the team in one short line.
 If the user asked you to MAKE something (a game, app or website; a 3D model; a music beat), end your answer with exactly one action tag that carries a DETAILED description built from the team's plan: [[action:code|...]] or [[action:build3d|...]] or [[action:beat|...]]. Never use the ] character inside the tag. Otherwise use no tags.`,
 };
 
@@ -424,7 +488,6 @@ function speak(text, force, onDone) {
 /* ---------------- UI motion ---------------- */
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const PALETTE = ['#ffd21f', '#e21fd8', '#19e3a0', '#ff8a1f', '#6c3cf0', '#38bdf8', '#ffffff'];
-const rnd = (a, b) => a + Math.random() * (b - a);
 function makeSky() {
   const sky = $('#sky'); if (REDUCED) return;
   const kinds = ['dot', 'dot', 'stick', 'ring', 'star', 'star', 'planet'];
@@ -540,7 +603,7 @@ function renderChat() {
   requestAnimationFrame(() => requestAnimationFrame(() => msgsEl.classList.remove('instant')));
   const msgs = curMsgs();
   showHero(!msgs.length);
-  msgs.forEach(m => addMsg(m.card ? 'bot' : m.role, m.role === 'assistant' && !m.card ? stripActions(m.content).text : m.content, m.images));
+  msgs.forEach(m => { if (m.role === 'assistant' && !m.card) renderBot(addMsg('bot', ''), m.content); else addMsg(m.card ? 'bot' : m.role, m.content, m.images); });
   $('#chatTitle').textContent = curChat()?.title || 'New chat';
   renderChatList();
 }
@@ -646,10 +709,40 @@ $('#camInput').addEventListener('change', async e => {
 });
 
 function stripActions(text) {
-  const actions = [];
-  const t = text.replace(/\[\[action:([a-z0-9_]+)(?:\|([^\]]*))?\]\]/gi, (_, a, arg) => { actions.push({ a: a.toLowerCase(), arg: (arg || '').trim() }); return ''; })
-    .replace(/\[\[action:[^\]]*$/i, '').trim();
-  return { text: t, actions };
+  const actions = [], thoughts = [];
+  let thinking = null;
+  const t = String(text)
+    .replace(/\[\[think:([^\]]*)\]\]/gi, (_, x) => { if (x.trim()) thoughts.push(x.trim()); return ''; })
+    .replace(/\[\[think:([^\]]*)$/i, (_, x) => { thinking = x.trim() || '…'; return ''; })
+    .replace(/\[\[action:([a-z0-9_]+)(?:\|([^\]]*))?\]\]/gi, (_, a, arg) => { actions.push({ a: a.toLowerCase(), arg: (arg || '').trim() }); return ''; })
+    .replace(/\[\[(a(c(t(i(o(n(:[^\]]*)?)?)?)?)?)?|t(h(i(n(k)?)?)?)?)?$/i, '').trim();
+  return { text: t, actions, thoughts, thinking };
+}
+/* Shobot's reply: live thoughts first, then a short answer (long ones fold to 2 lines). */
+function renderBot(bubble, raw, { live = false } = {}) {
+  const { text, thoughts, thinking } = stripActions(raw);
+  const steps = thinking ? [...thoughts, thinking] : thoughts;
+  let html = '';
+  if (steps.length) {
+    const open = live && !text;
+    html += `<details class="thoughts${open ? ' live' : ''}"${open ? ' open' : ''}><summary><span class="th-ico">💭</span><span class="th-sum">${open ? 'Shobot is thinking…' : `Thought for ${steps.length} step${steps.length > 1 ? 's' : ''}`}</span></summary><ol>${steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol></details>`;
+  }
+  if (text) html += `<div class="answer">${md(text)}</div>`;
+  else if (!steps.length) html += live ? '<span class="typing"><span></span><span></span><span></span></span>' : md('👍');
+  bubble.innerHTML = html;
+  if (!live) foldLong(bubble);
+  return { text, steps };
+}
+function foldLong(bubble) {
+  const a = bubble.querySelector('.answer'); if (!a || a.querySelector('pre')) return;
+  requestAnimationFrame(() => {
+    const cs = getComputedStyle(a), lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5;
+    if (a.scrollHeight <= lh * 3.3) return;
+    a.style.setProperty('--fold', `${Math.round(lh * 2 + 2)}px`); a.classList.add('fold');
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'more-btn'; b.textContent = 'Read more ▾';
+    b.onclick = () => { const open = a.classList.toggle('open'); b.textContent = open ? 'Show less ▴' : 'Read more ▾'; if (!open) a.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); };
+    bubble.appendChild(b);
+  });
 }
 
 /* ---- live work card ---- */
@@ -663,8 +756,8 @@ function workCard(kind, title) {
     <div class="work-foot"></div></div></div>`;
   msgsEl.appendChild(row); showHero(false); toBottom(true);
   const w = row.querySelector('.work');
-  Avatar.mount(row.querySelector('.facecam .shobot'));
   const card = {
+    av: ownAvatar(row.querySelector('.facecam .shobot')),
     row, el: w, screen: w.querySelector('.work-screen'), foot: w.querySelector('.work-foot'), note: w.querySelector('.work-note'),
     status(t) { w.querySelector('.work-status').textContent = t; },
     progress(f) { w.querySelector('.work-progress i').style.width = Math.max(3, Math.min(100, f * 100)) + '%'; },
@@ -685,7 +778,7 @@ async function chatBuild3d(desc) {
   const detail = /super|ultra|very detail|ละเอียดมาก|เยอะ/i.test(desc) ? 'super' : /simple|easy|ง่าย/i.test(desc) ? 'simple' : 'detailed';
   const card = workCard('3D build', desc);
   card.status('Getting my tools…');
-  Avatar.startJob('building');
+  Avatar.startJob('building', card);
   const ctl = new AbortController(); const unStop = stopButton(card, ctl);
   let screen, parts = [], planned = 0;
   try {
@@ -712,12 +805,12 @@ async function chatBuild3d(desc) {
       const g = new THREE.Group(); parts.forEach(p => g.add(makeMesh(p)));
       new GLTFExporter().parse(g, r => download('shobot-model.glb', new Blob([r], { type: 'model/gltf-binary' })), () => toast('Export failed'), { binary: true });
     });
-    Avatar.endJob(); beep('ok');
+    Avatar.endJob(true, card); beep('ok');
   } catch (e) {
     console.warn(e); unStop();
     if (parts.length) { screen?.done(); card.fail(`Stopped at ${parts.length} parts`); card.button('Open in 3D Studio', async () => { const m = await go('studio3d'); m?.load(parts); }, false); }
     else { card.fail(e.code ? aiErrorText(e) : "I couldn't load my 3D tools. Check the internet and try again."); screen?.destroy(); }
-    Avatar.endJob(false); if (e.code !== 'cancelled' && e.code !== 'declined') Avatar.play('surprised', 1400);
+    Avatar.endJob(false, card); if (e.code !== 'cancelled' && e.code !== 'declined') Avatar.play('surprised', 1400);
   }
   toBottom();
 }
@@ -729,7 +822,7 @@ async function chatCode(request) {
   card.screen.classList.add('code');
   const pre = document.createElement('pre'); pre.className = 'live-code'; card.screen.prepend(pre);
   card.status('Opening my laptop…');
-  Avatar.startJob('coding');
+  Avatar.startJob('coding', card);
   const ctl = new AbortController(); const unStop = stopButton(card, ctl);
   let lines = 0;
   try {
@@ -753,10 +846,10 @@ async function chatCode(request) {
     card.button('Open in Code', () => go('code'), false);
     card.button('Test on devices', () => { $('#testSrc').value = 'code'; go('test'); });
     card.button('Save file', () => download('shobot-project.html', new Blob([buildDoc()], { type: 'text/html' })));
-    Avatar.endJob(); beep('ok');
+    Avatar.endJob(true, card); beep('ok');
   } catch (e) {
     console.warn(e); unStop(); card.fail(aiErrorText(e));
-    Avatar.endJob(false); if (e.code !== 'cancelled' && e.code !== 'declined') Avatar.play('surprised', 1400);
+    Avatar.endJob(false, card); if (e.code !== 'cancelled' && e.code !== 'declined') Avatar.play('surprised', 1400);
   }
   toBottom();
 }
@@ -766,7 +859,7 @@ async function chatBeat(desc) {
   desc = desc || 'a happy dance beat';
   const card = workCard('music', desc);
   card.status('Putting on my headphones…');
-  Avatar.startJob('djing');
+  Avatar.startJob('djing', card);
   const grid = document.createElement('div'); grid.className = 'beat'; card.screen.prepend(grid);
   try {
     const m = await loadModule('music');
@@ -782,11 +875,11 @@ async function chatBeat(desc) {
     const playBtn = card.button('▶ Play', () => m.toggle(), false);
     m.onState(p => (playBtn.textContent = p ? '⏹ Stop' : '▶ Play'));
     card.button('Open in Music', () => go('music'));
-    Avatar.endJob(); m.toggle();
+    Avatar.endJob(true, card); m.toggle();
     void off;
   } catch (e) {
     console.warn(e); card.fail(aiErrorText(e)); grid.remove();
-    Avatar.endJob(false); Avatar.play('surprised', 1400);
+    Avatar.endJob(false, card); Avatar.play('surprised', 1400);
   }
   toBottom();
 }
@@ -826,7 +919,6 @@ async function chatTeam(task, size = 5, images) {
   size = Math.max(3, Math.min(10, Math.round(+size) || 5));
   if (!(await costCheck('team', size))) { addMsg('bot', aiErrorText(declined())); return; }
   const cid = currentId, ctl = new AbortController();
-  Avatar.startJob('thinking');
   const row = document.createElement('div'); row.className = 'msg bot';
   row.innerHTML = `<div class="bubble wide"><div class="work team">
     <div class="work-head"><span class="live-dot"></span><span class="tag">LIVE</span><span>👥 Shobot Team · ${size} agents</span><span class="work-status">Planning…</span></div>
@@ -839,7 +931,8 @@ async function chatTeam(task, size = 5, images) {
   const w = row.querySelector('.work'), grid = w.querySelector('.team-grid'), foot = w.querySelector('.work-foot');
   const status = t => (w.querySelector('.work-status').textContent = t);
   const progress = f => (w.querySelector('.work-progress i').style.width = Math.max(4, Math.min(100, f * 100)) + '%');
-  Avatar.mount(w.querySelector('.team-leader'));
+  const lead = { av: ownAvatar(w.querySelector('.team-leader')) };
+  Avatar.startJob('thinking', lead);
   const stop = document.createElement('button'); stop.className = 'btn ghost'; stop.textContent = '■ Stop the team'; stop.onclick = () => ctl.abort(); foot.appendChild(stop);
   const ctx = curMsgs().slice(-7, -1).map(m => `${m.role === 'user' ? userName() : 'Shobot'}: ${plain(m.content).slice(0, 400)}`).join('\n');
   progress(0.04);
@@ -909,21 +1002,21 @@ async function chatTeam(task, size = 5, images) {
     progress(0.85);
 
     // 4. The leader writes the final answer
-    status('Shobot is putting it all together…'); Avatar.set('talking');
+    status('Shobot is putting it all together…'); lead.av.set('talking');
     const bubble = addMsg('bot', ''); bubble.innerHTML = '<span class="typing"><span></span><span></span><span></span></span>';
     const finalText = await callRetry('final', [{ role: 'user', content: `${userName()} asked: ${task}\nTeam goal: ${goal}\n\n${work}\n\n### Checker's notes\n${review || '(no notes)'}` }], {
       signal: ctl.signal, system: TEAM_PROMPTS.final(), images,
-      onText: ({ text }) => { bubble.classList.add('streaming'); bubble.innerHTML = md(stripActions(text).text || '…'); toBottom(); },
+      onText: ({ text }) => { bubble.classList.add('streaming'); renderBot(bubble, text, { live: true }); toBottom(); },
     });
     bubble.classList.remove('streaming');
     const { text: clean, actions } = stripActions(finalText);
-    bubble.innerHTML = md(clean || '👍');
+    renderBot(bubble, finalText);
     stop.remove();
     w.classList.add('done'); w.querySelector('.tag').textContent = 'DONE'; progress(1);
     status(`Done · ${good.length} agents + Checker worked together`); confettiFrom(w);
     remember('assistant', `👥 **Team of ${size}** worked on: ${goal}\n${agents.map(a => `${a.emoji} ${a.name} (${a.role}): ${a.task}`).join('\n')}`, { card: 'team' }, cid);
     remember('assistant', finalText, {}, cid);
-    Avatar.endJob(); beep('ok'); toBottom();
+    Avatar.endJob(true, lead); beep('ok'); toBottom();
     speak(clean);
     for (const act of actions) runAction(act);
     return clean;
@@ -931,7 +1024,7 @@ async function chatTeam(task, size = 5, images) {
     console.warn(e); stop.remove();
     w.classList.add('done'); w.querySelector('.tag').textContent = 'STOPPED';
     status(e.code === 'cancelled' || ctl.signal.aborted ? 'The team stopped.' : aiErrorText(e));
-    Avatar.endJob(false); if (!ctl.signal.aborted) Avatar.play('surprised', 1400);
+    Avatar.endJob(false, lead); if (!ctl.signal.aborted) Avatar.play('surprised', 1400);
     return null;
   }
 }
@@ -1003,7 +1096,7 @@ async function sendChat(text, { silent } = {}) {
   try {
     reply = await callAI('chat', history, {
       images: pics.map(p => p.blob),
-      onText: ({ text }) => { if (!Avatar.jobs) Avatar.set('talking'); bubble.classList.add('streaming'); bubble.innerHTML = md(stripActions(text).text || '…'); toBottom(); },
+      onText: ({ text }) => { const r = renderBot(bubble, text, { live: true }); if (!Avatar.jobs) Avatar.set(r.text ? 'talking' : 'thinking'); bubble.classList.add('streaming'); toBottom(); },
     });
   } catch (e) {
     console.warn(e);
@@ -1012,7 +1105,7 @@ async function sendChat(text, { silent } = {}) {
   bubble.classList.remove('streaming'); $('#aiDot').classList.remove('busy');
   const { text: clean, actions } = stripActions(reply);
   remember('assistant', reply);
-  bubble.innerHTML = md(clean || '👍'); toBottom();
+  renderBot(bubble, reply); toBottom();
   beep('recv');
   chatBusy = false; $('#sendBtn').disabled = false;
   if (!Avatar.jobs && !silent) {

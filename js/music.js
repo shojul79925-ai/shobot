@@ -148,7 +148,7 @@ export function init(api) {
   async function make(desc, opts = {}) {
     desc = (desc || '').trim(); if (!desc) return null;
     $('#beatInput').value = desc;
-    api.Avatar.set('djing'); if (!opts.quiet) api.toast('Shobot is making your beat… 🎧', 4000);
+    if (!api.Avatar.jobs) api.Avatar.set('djing'); if (!opts.quiet) api.toast('Shobot is making your beat… 🎧', 4000);
     try {
       const data = api.extractJSON(await api.callAI('music', [{ role: 'user', content: desc }], { onText: opts.onText }));
       const n = song = empty();
@@ -157,11 +157,11 @@ export function init(api) {
       DRUMS.forEach(d => { const a = data.drums?.[d.id]; if (Array.isArray(a)) for (let i = 0; i < STEPS; i++) n.drums[d.id][i] = a[i] ? 1 : 0; });
       if (Array.isArray(data.melody)) for (let i = 0; i < STEPS; i++) { const v = data.melody[i]; const idx = typeof v === 'string' ? NOTES.indexOf(v) : (Number.isInteger(v) ? v : -1); n.melody[i] = idx >= 0 && idx < NOTES.length ? idx : -1; }
       bpm.value = n.bpm; $('#bpmVal').textContent = n.bpm; inst.value = n.inst;
-      refresh(); save(); stop(); if (opts.autoplay !== false) play(); else api.Avatar.set('idle');
+      refresh(); save(); stop(); if (opts.autoplay !== false) play(); else if (!api.Avatar.jobs) api.Avatar.set('idle');
       if (!opts.quiet) api.toast(data.title ? `Now playing: ${data.title} 🎶` : 'Your beat is ready! 🎶');
       return { title: data.title || 'New beat', song: JSON.parse(JSON.stringify(song)) };
     } catch (e) {
-      console.warn(e); api.Avatar.set('idle'); api.Avatar.play('surprised', 1400);
+      console.warn(e); if (!api.Avatar.jobs) { api.Avatar.set('idle'); api.Avatar.play('surprised', 1400); }
       if (!opts.quiet) api.toast("Shobot couldn't make that beat right now. Try again!");
       throw e;
     }
