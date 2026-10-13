@@ -186,7 +186,7 @@ async function blobToBase64(b) {
 const MODE_LABEL = { chat: '💬 Chat', code: '⌨️ Code', '3d': '🧊 3D', music: '🎹 Music', plan: '👥 Team', agent: '👥 Team', review: '👥 Team', final: '👥 Team' };
 function logUsage(mode, u = {}) {
   const log = store.get('usageLog', []);
-  log.push({ t: Date.now(), mode, provider: u.provider || null, model: u.model || null, in: u.in || 0, out: u.out || 0, cost: typeof u.cost === 'number' ? u.cost : null });
+  log.push({ t: Date.now(), mode, brain: settings.brain, provider: u.provider || null, model: u.model || null, in: u.in || 0, out: u.out || 0, cost: typeof u.cost === 'number' ? u.cost : null });
   store.set('usageLog', log.slice(-400));
   if (current === 'usage') renderUsage();
 }
@@ -260,6 +260,7 @@ function aiErrorText(e) {
     rate_limited: "I'm thinking too fast! Let's rest a minute, then try again. 😅",
     offline: "I can't reach my brain. Check the internet and try again.",
     cancelled: 'Stopped.',
+    declined: 'Okay, I did not start it. Nothing was spent. 👍',
     images_unavailable: "I can't look at pictures here yet. Try describing it to me in words!",
     image_rejected: "That picture didn't work. Try a different one.",
   })[e.code] || "Oops, my brain glitched. Try again! 🔧";
@@ -267,7 +268,43 @@ function aiErrorText(e) {
 
 /* ---------------- generators ---------------- */
 import('./model3d.js').catch(() => {}); // warm up the 3D kit
+/* ---- cost check before big (paid) jobs ---- */
+const THB_PER_USD = 33.6;
+const COST_GUESS = { '3d': { fast: 0.15, smart: 0.15, genius: 0.15 }, code: { fast: 0.08, smart: 0.08, genius: 0.16 } };
+function guessCost(kind, n = 5) {
+  const b = settings.brain in BRAINS ? settings.brain : 'smart';
+  if (kind === 'team') return b === 'genius' ? 0.25 + 0.03 * n : b === 'fast' ? 0.03 + 0.002 * n : 0.09 + 0.004 * n;
+  const past = store.get('usageLog', []).filter(e => e.mode === kind && e.brain === b && e.cost > 0).slice(-10);
+  const per = past.length >= 2 ? past.reduce((a, e) => a + e.cost, 0) / past.length : null;
+  return per != null ? per * (kind === 'code' ? 1.2 : 1) : COST_GUESS[kind][b];
+}
+async function costCheck(kind, n) {
+  if (IN_CLAUDE) return true; // the Claude page uses the person's own Claude plan
+  try {
+    if (!usageKey || Date.now() - usageFetchedAt > 60000) { usageFetchedAt = Date.now(); usageKey = await (await fetch('api/chat?usage=1', { cache: 'no-store' })).json(); }
+  } catch { return true; }
+  if (usageKey?.provider !== 'openrouter') return true;
+  const usd = guessCost(kind, n);
+  if (usd < 0.02) return true;
+  const what = { '3d': 'This 3D build', code: 'This coding job', team: `The team of ${n} agents` }[kind];
+  const baht = Math.max(1, Math.round(usd * THB_PER_USD));
+  const rem = usageKey.key?.limit_remaining;
+  return new Promise(res => {
+    const m = $('#costModal');
+    $('#costTitle').textContent = `${what} costs about ฿${baht}`;
+    $('#costText').innerHTML = `That's about $${usd.toFixed(2)} with the <b>${esc(brain().label)}</b> brain.` +
+      (rem != null ? (rem < usd ? `<br><b class="warn-text">Only $${rem.toFixed(2)} is left this month, so it may stop halfway.</b>` : `<br>You have $${rem.toFixed(2)} left.`) : '') +
+      (kind !== '3d' && settings.brain === 'genius' ? '<br>Tip: the Smart 🧠 brain costs about half.' : '');
+    m.hidden = false; Avatar.play('thinking', 60000); beep('send');
+    const done = ok => { m.hidden = true; $('#costGo').onclick = $('#costNo').onclick = null; Avatar.play(ok ? 'happy' : 'wave', 1200); res(ok); };
+    $('#costGo').onclick = () => done(true);
+    $('#costNo').onclick = () => done(false);
+  });
+}
+const declined = () => Object.assign(new Error('declined'), { code: 'declined' });
+
 async function gen3d(desc, detail = 'detailed', { onTitle, onPart, signal } = {}) {
+  if (!(await costCheck('3d'))) throw declined();
   const { lineReader, normalize } = await import('./model3d.js');
   let title = null, count = 0;
   const rd = lineReader(o => {
@@ -300,6 +337,7 @@ function testCode(html, ms = 2200) {
 }
 /** Write code, test it, and if it crashes, fix it once by itself. */
 async function genTestedCode(request, { onCode, onStatus, signal } = {}) {
+  if (!(await costCheck('code'))) throw declined();
   let out = await genCode(request, { onCode, signal });
   onStatus?.('Testing my code… 🧪');
   let errs = await testCode(out.html);
@@ -679,7 +717,7 @@ async function chatBuild3d(desc) {
     console.warn(e); unStop();
     if (parts.length) { screen?.done(); card.fail(`Stopped at ${parts.length} parts`); card.button('Open in 3D Studio', async () => { const m = await go('studio3d'); m?.load(parts); }, false); }
     else { card.fail(e.code ? aiErrorText(e) : "I couldn't load my 3D tools. Check the internet and try again."); screen?.destroy(); }
-    Avatar.endJob(false); if (e.code !== 'cancelled') Avatar.play('surprised', 1400);
+    Avatar.endJob(false); if (e.code !== 'cancelled' && e.code !== 'declined') Avatar.play('surprised', 1400);
   }
   toBottom();
 }
@@ -718,7 +756,7 @@ async function chatCode(request) {
     Avatar.endJob(); beep('ok');
   } catch (e) {
     console.warn(e); unStop(); card.fail(aiErrorText(e));
-    Avatar.endJob(false); if (e.code !== 'cancelled') Avatar.play('surprised', 1400);
+    Avatar.endJob(false); if (e.code !== 'cancelled' && e.code !== 'declined') Avatar.play('surprised', 1400);
   }
   toBottom();
 }
@@ -786,6 +824,7 @@ const plain = t => String(t).replace(/```[\s\S]*?```/g, ' [code] ').replace(/[#*
 async function chatTeam(task, size = 5, images) {
   task = (task || '').trim() || 'Help me with a big project';
   size = Math.max(3, Math.min(10, Math.round(+size) || 5));
+  if (!(await costCheck('team', size))) { addMsg('bot', aiErrorText(declined())); return; }
   const cid = currentId, ctl = new AbortController();
   Avatar.startJob('thinking');
   const row = document.createElement('div'); row.className = 'msg bot';
@@ -1125,7 +1164,7 @@ async function codeAsk(text) {
     if (innerWidth < 900) showPane('preview');
   } catch (e) {
     console.warn(e); wait.textContent = '🤖 ' + aiErrorText(e); loadFile('html');
-    Avatar.endJob(false); Avatar.play('surprised', 1200);
+    Avatar.endJob(false); if (e.code !== 'declined') Avatar.play('surprised', 1200);
   } finally { codeCtl = null; $('#codeSend').textContent = '➤'; }
 }
 $('#codeForm').addEventListener('submit', e => { e.preventDefault(); if (codeCtl) codeCtl.abort(); else codeAsk($('#codeInput').value); });

@@ -133,7 +133,7 @@ export function init(api) {
       });
       save(); frame(); status.textContent = `Done: ${res.title || desc} · ${n} parts`;
     } catch (e) {
-      status.textContent = e.code === 'cancelled' ? `Stopped at ${n} parts` : "Shobot couldn't build that. Try again.";
+      status.textContent = e.code === 'cancelled' ? `Stopped at ${n} parts` : e.code === 'declined' ? 'Okay, not building it. Nothing was spent.' : "Shobot couldn't build that. Try again.";
       save();
     } finally { building = null; btn.textContent = 'Build'; }
   }

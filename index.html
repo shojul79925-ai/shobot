@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=usage1">
+<link rel="stylesheet" href="styles.css?v=cost1">
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
@@ -465,6 +465,19 @@
   </div>
 </div>
 
+<!-- Cost check before big jobs -->
+<div class="modal" id="costModal" hidden>
+  <div class="modal-card">
+    <div class="cost-coin">💰</div>
+    <h3 id="costTitle">This job costs brain money</h3>
+    <p id="costText"></p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="costNo">No thanks</button>
+      <button class="btn" id="costGo">Go!</button>
+    </div>
+  </div>
+</div>
+
 <!-- Settings dialog -->
 <div class="modal" id="settingsModal" hidden>
   <div class="modal-card left">
@@ -516,6 +529,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="js/app.js?v=usage1"></script>
+<script type="module" src="js/app.js?v=cost1"></script>
 </body>
 </html>

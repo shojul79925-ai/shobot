@@ -636,3 +636,7 @@ textarea:focus-visible,input:not([type=checkbox]):not([type=range]):not([type=co
 .usage-list .cost{font-variant-numeric:tabular-nums;font-weight:800}
 .usage-list .empty{display:block;text-align:center;color:var(--muted)}
 .usage-link{display:block;margin:0 auto 12px}
+.cost-coin{font-size:44px;line-height:1;animation:coinSpin 1.6s ease-in-out infinite}
+@keyframes coinSpin{0%,100%{transform:rotateY(0) translateY(0)}50%{transform:rotateY(180deg) translateY(-6px)}}
+.warn-text{color:var(--orange)}
+@media (prefers-reduced-motion:reduce){.cost-coin{animation:none}}

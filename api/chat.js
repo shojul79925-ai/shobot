@@ -13,7 +13,7 @@ const HAIKU = 'anthropic/claude-haiku-5.5', SONNET = 'anthropic/claude-sonnet-5.
 const GW_MODELS = {
   fast: { chat: [HAIKU], music: [HAIKU], code: [SONNET, HAIKU], '3d': [SONNET, HAIKU], plan: [HAIKU], agent: [HAIKU], review: [HAIKU], final: [SONNET, HAIKU] },
   smart: { chat: [SONNET, HAIKU], music: [HAIKU], code: [SONNET, HAIKU], '3d': [SONNET, HAIKU], plan: [SONNET, HAIKU], agent: [HAIKU], review: [SONNET, HAIKU], final: [SONNET, HAIKU] },
-  genius: { chat: [OPUS, SONNET], music: [SONNET, HAIKU], code: [OPUS, SONNET], '3d': [OPUS, SONNET], plan: [OPUS, SONNET], agent: [SONNET, HAIKU], review: [OPUS, SONNET], final: [OPUS, SONNET] },
+  genius: { chat: [OPUS, SONNET], music: [SONNET, HAIKU], code: [OPUS, SONNET], '3d': [SONNET, HAIKU], plan: [OPUS, SONNET], agent: [SONNET, HAIKU], review: [OPUS, SONNET], final: [OPUS, SONNET] },
 };
 // Each model has its own free-tier limit, so when one is busy Shobot tries the next.
 const GEMINI_MODELS = {
