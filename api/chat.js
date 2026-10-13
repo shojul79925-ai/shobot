@@ -1,5 +1,6 @@
 // Shobot brain on Vercel: streams an AI answer to the page as plain text.
 // Providers (first one configured wins):
+//   OPENROUTER_API_KEY  -> OpenRouter (pay-as-you-go credits; uses Claude models)
 //   GEMINI_API_KEY      -> Google Gemini API (has a free tier; the key owner must be 18+)
 //   AI_GATEWAY_API_KEY  -> Vercel AI Gateway (Claude)
 //   automatic Vercel OIDC token -> Vercel AI Gateway (needs a card on the Vercel account)
@@ -98,6 +99,45 @@ async function streamGateway(token, mode, system, messages, write, brain = 'smar
   return lastErr;
 }
 
+/* ---------- OpenRouter (same Claude models, OpenAI-style API) ---------- */
+function toOpenAI(system, messages) {
+  return [{ role: 'system', content: system }, ...messages.map(m => ({
+    role: m.role,
+    content: typeof m.content === 'string' ? m.content : m.content.map(b => b.type === 'image'
+      ? { type: 'image_url', image_url: { url: `data:${b.source.media_type};base64,${b.source.data}` } }
+      : { type: 'text', text: b.text }),
+  }))];
+}
+async function streamOpenRouter(key, mode, system, messages, write, brain = 'smart', info = {}) {
+  let lastErr = 'AI error';
+  const models = [process.env.OPENROUTER_MODEL, ...(GW_MODELS[brain] || GW_MODELS.smart)[mode]].filter(Boolean);
+  for (const model of models) {
+    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json', 'x-title': 'Shobot', 'http-referer': 'https://shobot.vercel.app' },
+      body: JSON.stringify({ model, max_tokens: MAX_TOKENS[mode], stream: true, messages: toOpenAI(system, messages) }),
+    });
+    if (!r.ok || !r.body) {
+      const j = await r.json().catch(() => ({}));
+      lastErr = j?.error?.message || `openrouter ${r.status}`; info.status = r.status; info.model = model;
+      (info.tries ||= []).push(`${model}: ${r.status} ${lastErr.slice(0, 120)}`);
+      if (r.status === 429) info.busy = true;
+      if ([401, 402, 403].includes(r.status)) break; // bad key or no credits left
+      continue;
+    }
+    let wrote = 0;
+    await readSSE(r.body, ev => {
+      const t = ev?.choices?.[0]?.delta?.content;
+      if (t) { wrote += t.length; write(t); }
+      if (ev?.error) write(`\n[[error:${ev.error.message || 'stream error'}]]`);
+    });
+    info.model = model; info.chars = wrote;
+    if (!wrote) { lastErr = `empty answer from ${model}`; (info.tries ||= []).push(lastErr); continue; }
+    return null;
+  }
+  return lastErr;
+}
+
 /* ---------- Google Gemini ---------- */
 function toGemini(messages) {
   return messages.map(m => ({
@@ -151,9 +191,14 @@ async function streamGemini(key, mode, system, messages, write, brain = 'smart',
 
 module.exports = async (req, res) => {
   res.setHeader('cache-control', 'no-store');
+  const orKey = process.env.OPENROUTER_API_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;
   const gwToken = process.env.AI_GATEWAY_API_KEY || req.headers['x-vercel-oidc-token'] || process.env.VERCEL_OIDC_TOKEN;
-  const provider = geminiKey ? 'gemini' : gwToken ? 'gateway' : null;
+  const provider = orKey ? 'openrouter' : geminiKey ? 'gemini' : gwToken ? 'gateway' : null;
+  const run = (mode, system, messages, write, brain, info) =>
+    provider === 'openrouter' ? streamOpenRouter(orKey, mode, system, messages, write, brain, info)
+      : provider === 'gemini' ? streamGemini(geminiKey, mode, system, messages, write, brain, info)
+        : streamGateway(gwToken, mode, system, messages, write, brain, info);
 
   if (req.method === 'GET') {
     if (req.query && req.query.ping) {
@@ -163,11 +208,9 @@ module.exports = async (req, res) => {
       const q = pm === 'plan' ? 'Split this task into exactly 3 jobs. Reply ONLY JSON {"goal":"...","agents":[{"name":"...","role":"...","task":"..."}]}. TASK: plan a fun robot game'
         : pm === 'chat' ? 'Say hi' : 'In two sentences, give one idea for a fun robot game.';
       let text = ''; const info = {};
-      const err = provider === 'gemini'
-        ? await streamGemini(geminiKey, pm, 'You are a helpful assistant. Be brief.', [{ role: 'user', content: q }], t => (text += t), pb, info)
-        : provider === 'gateway'
-          ? await streamGateway(gwToken, pm, 'You are a helpful assistant. Be brief.', [{ role: 'user', content: q }], t => (text += t), pb, info)
-          : 'No AI key configured';
+      const err = provider
+        ? await run(pm, 'You are a helpful assistant. Be brief.', [{ role: 'user', content: q }], t => (text += t), pb, info)
+        : 'No AI key configured';
       return res.status(200).json({ ai: !err && !!text, provider, mode: pm, brain: pb, sample: text.slice(0, 80), error: err || undefined, ...info });
     }
     return res.status(200).json({ ai: !!provider, provider });
@@ -191,9 +234,7 @@ module.exports = async (req, res) => {
   };
   let err; const info = {};
   try {
-    err = provider === 'gemini'
-      ? await streamGemini(geminiKey, mode, system, messages, write, brain, info)
-      : await streamGateway(gwToken, mode, system, messages, write, brain, info);
+    err = await run(mode, system, messages, write, brain, info);
   } catch (e) {
     if (started) { res.write('\n[[error:connection dropped]]'); return res.end(); }
     err = e.message || 'AI error';
