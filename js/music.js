@@ -150,7 +150,7 @@ export function init(api) {
     $('#beatInput').value = desc;
     if (!api.Avatar.jobs) api.Avatar.set('djing'); if (!opts.quiet) api.toast('Shobot is making your beat… 🎧', 4000);
     try {
-      const data = api.extractJSON(await api.callAI('music', [{ role: 'user', content: desc }], { onText: opts.onText }));
+      const data = api.extractJSON(await api.callAI('music', [{ role: 'user', content: desc }], { onText: t => { opts.onText?.(t); if (!api.Avatar.jobs) api.Avatar.act(api.actForBeat(t.text)); } }));
       const n = song = empty();
       if (data.bpm) n.bpm = Math.max(60, Math.min(180, Math.round(data.bpm)));
       if (['synth', 'piano', 'pluck', 'bass', 'bell'].includes(data.instrument)) n.inst = data.instrument;
@@ -180,6 +180,12 @@ export function init(api) {
     make, onShow() {},
     toggle() { playing ? stop() : play(); }, isPlaying: () => playing,
     song: () => song, DRUMS, NOTES,
+    load(s) {
+      if (!s?.drums) return;
+      stop(); song = JSON.parse(JSON.stringify(s));
+      bpm.value = song.bpm; $('#bpmVal').textContent = song.bpm; inst.value = song.inst;
+      refresh(); save();
+    },
     onStep(f) { stepFns.add(f); return () => stepFns.delete(f); },
     onState(f) { stateFns.add(f); return () => stateFns.delete(f); },
   };

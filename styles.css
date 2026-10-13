@@ -98,7 +98,9 @@ input:focus,textarea:focus{border-color:var(--magenta)}
 .av-head{transform-origin:50% 90%;animation:av-headbob 6s ease-in-out infinite}
 .av-eyes{transition:transform .15s ease-out}
 .av-eye{transform-origin:center;animation:av-blink 4.6s infinite}
-.av-arm{transform-origin:50% 15%}
+.av-arm{transform-box:view-box}
+.av-arm-l{transform-origin:51px 138.6px}
+.av-arm-r{transform-origin:149px 143.55px}
 .av-arm-l{animation:av-arml 3.2s ease-in-out infinite}
 .av-arm-r{animation:av-armr 3.2s ease-in-out infinite}
 .av-ear{transform-origin:center;animation:av-ear 5s ease-in-out infinite}
@@ -106,7 +108,9 @@ input:focus,textarea:focus{border-color:var(--magenta)}
 .av-jet{transform-origin:50% 0;animation:av-jet .18s ease-in-out infinite alternate}
 .av-screen{animation:av-screen 3s steps(1) infinite}
 .av-mouth{transform-origin:center}
-.av-happy-eyes,.av-smile,.av-sparkles,.av-think,.av-zzz,.av-notes,.av-beam,.av-orbit,.av-band,.av-hat,.av-hammer,.av-laptop,.av-code,.av-sparks,.av-torch,.av-wrench,.av-brush,.av-magnifier,.av-bug,.av-blueprint,.av-block,.av-deck,.av-visor,.av-weld,.av-paint,.av-gear,.av-idea{opacity:0;transition:opacity .25s}
+.av-happy-eyes,.av-smile,.av-sparkles,.av-think,.av-zzz,.av-notes,.av-beam,.av-orbit,.av-band,.av-hat,.av-hammer,.av-laptop,.av-code,.av-sparks,.av-torch,.av-wrench,.av-brush,.av-magnifier,.av-bug,.av-blueprint,.av-block,.av-deck,.av-visor,.av-weld,.av-paint,.av-gear,.av-idea,.av-hold,.av-front,.av-chef,.av-grad,.av-wiz,.av-fx,.av-tape{opacity:0;transition:opacity .25s}
+.av-piece>*{display:none;fill:var(--paint,#ffd21f);stroke:var(--paint,#ffd21f)}
+.av-piece>.pc-shine{fill:none;stroke:#fff}
 /* every avatar runs on its own clock, so they never move in lockstep */
 .av-bot,.av-shadow,.av-head,.av-arm-l,.av-arm-r,.av-eye,.av-ear,.av-bulb{animation-delay:var(--av-d,0s)}
 .av-antenna{transition:opacity .25s}
@@ -779,3 +783,242 @@ textarea:focus-visible,input:not([type=checkbox]):not([type=range]):not([type=co
 .more-btn{margin-top:6px;background:none;border:0;padding:4px 0;color:var(--mint);font-weight:800;font-size:13.5px}
 .more-btn:hover{text-decoration:underline}
 @media (prefers-reduced-motion:reduce){.thoughts.live,.thoughts.live .th-ico,.thoughts li{animation:none}}
+
+
+/* ===================================================================
+   ACTIVITIES: Shobot shows exactly what it is doing right now.
+   Each activity = a pose (how the body moves) + what is in its hand +
+   what it holds in front + effects + a hat.  (see js/acts.js)
+   =================================================================== */
+.act .av-hold{opacity:1}
+.act.has-front .av-front{opacity:1}
+.act.pc .av-front-emoji{display:none}
+.act:not(.pc) .av-piece{display:none}
+.act.has-fx .av-fx{opacity:1}
+.act .av-fx text{animation:av-note 1.8s ease-in-out infinite}
+.act .av-fx text:nth-child(2){animation-delay:.45s}.act .av-fx text:nth-child(3){animation-delay:.9s}.act .av-fx text:nth-child(4){animation-delay:1.35s}
+.act .av-front{transform-origin:50% 100%;transition:opacity .25s}
+/* tools drawn in SVG */
+.act.t-hammer .av-hammer,.act.t-torch .av-torch,.act.t-wrench .av-wrench,.act.t-brush .av-brush,.act.t-magnifier .av-magnifier,.act.t-laptop .av-laptop,.act.t-blueprint .av-blueprint,.act.t-block .av-block,.act.t-deck .av-deck,.act.t-bug .av-laptop,.act.t-bug .av-bug{opacity:1}
+.act .av-brush path{fill:var(--paint,#e21fd8)}
+/* specials */
+.act.s-weld .av-weld{opacity:1;transform-origin:center;animation:av-flicker .14s steps(2) infinite}
+.act.s-weld .av-flame{transform-origin:center;animation:av-flicker .1s steps(2) infinite}
+.act.s-paint .av-paint{opacity:1}
+.act.s-paint .av-paint circle{fill:var(--paint,#e21fd8);transform-origin:center;animation:av-pop 2s ease-out infinite}
+.act.s-paint .av-paint circle:nth-child(2){animation-delay:.5s}.act.s-paint .av-paint circle:nth-child(3){animation-delay:1s}.act.s-paint .av-paint circle:nth-child(4){animation-delay:1.5s}
+.act.s-sparks .av-sparks{opacity:1}
+.act.s-sparks .av-sparks path,.act.s-sparks .av-sparks circle{transform-origin:center;animation:av-spark .55s ease-out infinite}
+.act.s-code .av-code{opacity:1}
+.act.s-code .av-code text{animation:av-note 1.8s ease-in-out infinite}
+.act.s-code .av-code text:nth-child(2){animation-delay:.6s}.act.s-code .av-code text:nth-child(3){animation-delay:1.2s}
+.act.s-notes .av-notes{opacity:1}
+.act.s-notes .av-notes text{animation:av-note 1.2s ease-in-out infinite}
+.act.s-notes .av-notes text:nth-child(2){animation-delay:.6s}
+.act.s-think .av-think{opacity:1}
+.act.s-think .av-think circle{animation:av-dot 1.2s ease-in-out infinite}
+.act.s-think .av-think circle:nth-child(2){animation-delay:.2s}.act.s-think .av-think circle:nth-child(3){animation-delay:.4s}
+.act.s-idea .av-idea{opacity:1;transform-origin:50% 100%;animation:av-pop 2.4s ease-out infinite .6s}
+.act.s-tape .av-tape{opacity:1;transform-origin:center;animation:av-tape 1.4s ease-in-out infinite}
+@keyframes av-tape{0%,100%{transform:scaleX(.55)}50%{transform:scaleX(1)}}
+.act.s-gear .av-gear{opacity:1;transform-origin:center;animation:av-gearspin 1.6s linear infinite}
+.act.s-sparkle .av-sparkles{opacity:1}
+.act.s-sparkle .av-sparkles path,.act.s-sparkle .av-sparkles circle{transform-origin:center;animation:av-twinkle 1s ease-in-out infinite}
+.act.s-talk .av-mouth{animation:av-talk .22s ease-in-out infinite alternate}
+.act.s-shakebot .av-bot{animation:av-shake .09s linear infinite}
+/* hats */
+.act.h-hard .av-hat,.act.h-weld .av-hat,.act.h-weld .av-visor,.act.h-band .av-band,.act.h-chef .av-chef,.act.h-grad .av-grad,.act.h-wiz .av-wiz{opacity:1}
+.act.h-hard .av-antenna,.act.h-weld .av-antenna,.act.h-chef .av-antenna,.act.h-grad .av-antenna,.act.h-wiz .av-antenna{opacity:0}
+/* eyes + mouth */
+.act.e-down .av-eyes{transform:translate(0,6px)!important}
+.act.e-up .av-eyes{transform:translate(5px,-5px)!important}
+.act.e-side .av-eyes{animation:av-eyescan 1.6s ease-in-out infinite}
+@keyframes av-eyescan{0%,100%{transform:translate(-5px,3px)}50%{transform:translate(5px,3px)}}
+.act.e-happy .av-eyes,.act.e-happy .av-mouth{opacity:0}
+.act.e-happy .av-happy-eyes,.act.e-happy .av-smile{opacity:1}
+.act.e-wide .av-eye{animation:none;transform:scale(1.3)}
+.act.e-smile .av-smile{opacity:1}.act.e-smile .av-mouth{opacity:0}
+
+/* ---- poses ---- */
+@keyframes ps-hipl{0%,100%{transform:rotate(22deg) translate(-2px,0)}50%{transform:rotate(26deg) translate(-2px,2px)}}
+@keyframes ps-hipr{0%,100%{transform:rotate(-22deg) translate(2px,0)}50%{transform:rotate(-26deg) translate(2px,2px)}}
+.p-swing .av-arm-r{animation:av-hammer .55s cubic-bezier(.55,0,.8,.3) infinite}
+.p-swing .av-arm-l{animation:av-steady 1.1s ease-in-out infinite}
+.p-swing .av-bot{animation:av-float 1.1s ease-in-out infinite}
+.p-saw .av-arm-r{animation:ps-saw .38s ease-in-out infinite}
+@keyframes ps-saw{0%,100%{transform:rotate(34deg) translate(-18px,6px)}50%{transform:rotate(42deg) translate(2px,6px)}}
+.p-saw .av-arm-l{animation:av-holdl 1.2s ease-in-out infinite}
+.p-saw .av-bot{animation:ps-rock .38s ease-in-out infinite}
+@keyframes ps-rock{0%,100%{transform:rotate(-2deg)}50%{transform:rotate(2deg)}}
+.p-turn .av-arm-r{animation:av-turn .6s ease-in-out infinite alternate}
+.p-turn .av-arm-l{animation:av-steady 1.1s ease-in-out infinite}
+.p-turn .av-head{animation:av-nod .6s ease-in-out infinite}
+.p-weld .av-arm-r{animation:av-weldarm .45s ease-in-out infinite alternate}
+.p-weld .av-arm-l{animation:av-steady 1.1s ease-in-out infinite}
+.p-weld .av-head{animation:av-tilt 2.4s ease-in-out infinite}
+.p-drill .av-arm-r{animation:ps-drill .07s linear infinite alternate}
+@keyframes ps-drill{from{transform:rotate(38deg) translate(-12px,6px)}to{transform:rotate(39deg) translate(-11px,8px)}}
+.p-drill .av-arm-l{animation:av-steady 1.1s ease-in-out infinite}
+.p-drill .av-hold{transform-origin:center;transform-box:fill-box;animation:av-recspin .25s linear infinite}
+.p-stroke .av-arm-r{animation:av-stroke .5s ease-in-out infinite alternate}
+.p-stroke .av-arm-l{animation:av-steady 1.1s ease-in-out infinite}
+.p-stroke .av-head{animation:av-tilt 1s ease-in-out infinite}
+.p-hold .av-arm-l{animation:av-holdl 1.6s ease-in-out infinite}
+.p-hold .av-arm-r{animation:av-holdr 1.6s ease-in-out infinite}
+.p-hold .av-front{animation:ps-frontbob 1.6s ease-in-out infinite}
+@keyframes ps-frontbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+.p-carry .av-arm-l{animation:av-holdl .4s ease-in-out infinite}
+.p-carry .av-arm-r{animation:av-holdr .4s ease-in-out infinite .2s}
+.p-carry .av-bot{animation:av-walk .8s ease-in-out infinite}
+.p-carry .av-shadow{animation:av-walkshadow .8s ease-in-out infinite}
+.p-carry .av-front{animation:av-wobble .4s ease-in-out infinite alternate}
+.p-lift .av-arm-l{animation:ps-liftl 1.6s ease-in-out infinite}
+.p-lift .av-arm-r{animation:ps-liftr 1.6s ease-in-out infinite}
+@keyframes ps-liftl{0%,100%{transform:rotate(-38deg) translate(12px,10px)}50%{transform:rotate(-95deg) translate(16px,-4px)}}
+@keyframes ps-liftr{0%,100%{transform:rotate(38deg) translate(-12px,10px)}50%{transform:rotate(95deg) translate(-16px,-4px)}}
+.p-lift .av-front{animation:ps-liftfront 1.6s ease-in-out infinite}
+@keyframes ps-liftfront{0%,100%{transform:translateY(0)}50%{transform:translateY(-34px) scale(1.05)}}
+.p-lift .av-eyes{transform:translate(0,-3px)!important}
+.p-scan .av-arm-r{animation:av-scan 1.1s ease-in-out infinite alternate}
+.p-scan .av-arm-l{animation:av-holdl 1.4s ease-in-out infinite}
+.p-type .av-arm-l{animation:av-typel .22s ease-in-out infinite alternate}
+.p-type .av-arm-r{animation:av-typer .22s ease-in-out infinite alternate .11s}
+.p-type .av-head{animation:av-headbob 2s ease-in-out infinite}
+.p-type .av-eyes{transform:translate(0,5px)!important}
+.p-write .av-arm-l{animation:av-holdl 2s ease-in-out infinite}
+.p-write .av-arm-r{animation:ps-write .5s linear infinite}
+@keyframes ps-write{0%,100%{transform:rotate(34deg) translate(-14px,4px)}25%{transform:rotate(31deg) translate(-8px,7px)}50%{transform:rotate(35deg) translate(-12px,3px)}75%{transform:rotate(32deg) translate(-6px,7px)}}
+.p-write .av-eyes{transform:translate(0,6px)!important}
+.p-write .av-head{animation:av-hmm 1.6s ease-in-out infinite}
+.p-stir .av-arm-r{animation:ps-stir .8s linear infinite}
+@keyframes ps-stir{0%,100%{transform:rotate(30deg) translate(-8px,4px)}25%{transform:rotate(40deg) translate(-12px,9px)}50%{transform:rotate(48deg) translate(-8px,4px)}75%{transform:rotate(40deg) translate(-4px,-1px)}}
+.p-stir .av-arm-l{animation:av-holdl 1.6s ease-in-out infinite}
+.p-stir .av-front{transform:translateY(8px)}
+.p-pour .av-arm-r{animation:ps-pour 1.4s ease-in-out infinite}
+@keyframes ps-pour{0%,100%{transform:rotate(-30deg) translate(2px,-4px)}50%{transform:rotate(-72deg) translate(6px,-12px)}}
+.p-pour .av-arm-l{animation:av-steady 1.4s ease-in-out infinite}
+.p-shake .av-arm-r{animation:ps-shake .12s linear infinite alternate}
+@keyframes ps-shake{from{transform:rotate(-118deg) translate(-4px,-8px)}to{transform:rotate(-140deg) translate(-4px,-8px)}}
+.p-shake .av-arm-l{animation:ps-hipl 1s ease-in-out infinite}
+.p-shake .av-eyes{transform:translate(4px,-4px)!important}
+.p-point .av-arm-r{animation:ps-point 1s ease-in-out infinite}
+@keyframes ps-point{0%,100%{transform:rotate(-145deg) translate(-4px,-6px)}50%{transform:rotate(-135deg) translate(-4px,-9px)}}
+.p-point .av-arm-l{animation:ps-hipl 1s ease-in-out infinite}
+.p-point .av-mouth{animation:av-talk .22s ease-in-out infinite alternate}
+.p-point .av-head{animation:av-tilt 1.4s ease-in-out infinite}
+.p-chin .av-arm-r{animation:av-chin 2s ease-in-out infinite}
+.p-chin .av-arm-l{animation:av-holdl 2s ease-in-out infinite}
+.p-chin .av-eyes{transform:translate(5px,-5px)!important}
+.p-chin .av-bulb{animation:av-bulb .5s ease-in-out infinite}
+.p-read .av-arm-l{animation:av-holdl 2.4s ease-in-out infinite}
+.p-read .av-arm-r{animation:av-holdr 2.4s ease-in-out infinite}
+.p-read .av-eyes{animation:av-eyescan 1.4s ease-in-out infinite}
+.p-read .av-head{animation:av-hmm 2.4s ease-in-out infinite}
+.p-juggle .av-arm-l{animation:ps-jugl .3s ease-in-out infinite alternate}
+.p-juggle .av-arm-r{animation:ps-jugr .3s ease-in-out infinite alternate .15s}
+@keyframes ps-jugl{from{transform:rotate(-30deg) translate(10px,6px)}to{transform:rotate(-62deg) translate(12px,-2px)}}
+@keyframes ps-jugr{from{transform:rotate(30deg) translate(-10px,6px)}to{transform:rotate(62deg) translate(-12px,-2px)}}
+.p-juggle .av-front{animation:ps-bounce .6s cubic-bezier(.3,0,.7,1) infinite}
+@keyframes ps-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-62px) rotate(180deg)}}
+.p-juggle .av-eyes{transform:translate(0,-5px)!important}
+.p-spin .av-arm-r{animation:ps-spinarm 1.2s ease-in-out infinite}
+@keyframes ps-spinarm{0%,100%{transform:rotate(-150deg) translate(-6px,-6px)}50%{transform:rotate(-142deg) translate(-6px,-9px)}}
+.p-spin .av-arm-l{animation:ps-hipl 1.2s ease-in-out infinite}
+.p-spin .av-hold{transform-box:fill-box;transform-origin:center;animation:av-recspin 1.4s linear infinite}
+.p-spin .av-eyes{transform:translate(4px,-5px)!important}
+.p-cheer .av-bot{animation:av-jump .6s ease-in-out infinite}
+.p-cheer .av-arm-l{animation:av-cheerl .6s ease-in-out infinite}
+.p-cheer .av-arm-r{animation:av-cheerr .6s ease-in-out infinite}
+.p-peek .av-arm-r{animation:ps-peek 2s ease-in-out infinite}
+@keyframes ps-peek{0%,100%{transform:rotate(-168deg) translate(16px,-10px)}50%{transform:rotate(-172deg) translate(16px,-12px)}}
+.p-peek .av-arm-l{animation:av-holdl 2s ease-in-out infinite}
+.p-peek .av-head{animation:av-tilt 3s ease-in-out infinite}
+.p-tap .av-arm-r{animation:ps-tap .22s ease-in-out infinite alternate}
+@keyframes ps-tap{from{transform:rotate(36deg) translate(-12px,4px)}to{transform:rotate(38deg) translate(-12px,10px)}}
+.p-tap .av-arm-l{animation:av-holdl 1.6s ease-in-out infinite}
+.p-tap .av-eyes{transform:translate(0,6px)!important}
+.p-dig .av-arm-r{animation:ps-dig .7s cubic-bezier(.55,0,.8,.3) infinite}
+@keyframes ps-dig{0%,100%{transform:rotate(-70deg) translate(-4px,-6px)}60%{transform:rotate(36deg) translate(-10px,8px)}}
+.p-dig .av-arm-l{animation:av-steady .7s ease-in-out infinite}
+.p-dig .av-bot{animation:av-float .7s ease-in-out infinite}
+.p-measure .av-arm-l{animation:ps-measl 1.4s ease-in-out infinite}
+.p-measure .av-arm-r{animation:ps-measr 1.4s ease-in-out infinite}
+@keyframes ps-measl{0%,100%{transform:rotate(60deg)}50%{transform:rotate(84deg)}}
+@keyframes ps-measr{0%,100%{transform:rotate(-60deg)}50%{transform:rotate(-84deg)}}
+.p-pump .av-arm-l{animation:ps-pumpl .35s ease-in-out infinite alternate}
+.p-pump .av-arm-r{animation:ps-pumpr .35s ease-in-out infinite alternate}
+@keyframes ps-pumpl{from{transform:rotate(-38deg) translate(12px,10px)}to{transform:rotate(-52deg) translate(14px,0)}}
+@keyframes ps-pumpr{from{transform:rotate(38deg) translate(-12px,10px)}to{transform:rotate(52deg) translate(-14px,0)}}
+.p-pump .av-front{animation:ps-squish .35s ease-in-out infinite alternate}
+@keyframes ps-squish{from{transform:scale(1,1)}to{transform:scale(1.18,.82)}}
+.p-listen .av-arm-r{animation:ps-listen 1.6s ease-in-out infinite}
+@keyframes ps-listen{0%,100%{transform:rotate(-170deg) translate(22px,-20px)}50%{transform:rotate(-174deg) translate(22px,-22px)}}
+.p-listen .av-arm-l{animation:ps-hipl 1.6s ease-in-out infinite}
+.p-listen .av-head{animation:av-tilt 2.4s ease-in-out infinite}
+.p-listen .av-ear-r{animation:av-earpulse .6s ease-in-out infinite}
+.p-scratch .av-arm-r{animation:av-scratch .3s ease-in-out infinite alternate}
+.p-scratch .av-arm-l{animation:av-cheerl .9s ease-in-out infinite}
+.p-scratch .av-head{animation:av-nod .45s ease-in-out infinite}
+.p-drum .av-arm-l{animation:ps-druml .25s ease-in-out infinite alternate}
+.p-drum .av-arm-r{animation:ps-drumr .25s ease-in-out infinite alternate .125s}
+@keyframes ps-druml{from{transform:rotate(-30deg) translate(10px,6px)}to{transform:rotate(-58deg) translate(12px,-6px)}}
+@keyframes ps-drumr{from{transform:rotate(30deg) translate(-10px,6px)}to{transform:rotate(58deg) translate(-12px,-6px)}}
+.p-drum .av-head{animation:av-nod .5s ease-in-out infinite}
+.p-drum .av-front{transform:translateY(8px)}
+.p-flag .av-arm-r{animation:av-wave .5s ease-in-out infinite alternate}
+.p-flag .av-arm-l{animation:ps-hipl 1s ease-in-out infinite}
+.p-sweep .av-arm-l{animation:av-holdl 1.2s ease-in-out infinite}
+.p-sweep .av-arm-r{animation:av-holdr 1.2s ease-in-out infinite}
+.p-sweep .av-bot{animation:ps-sweep .6s ease-in-out infinite alternate}
+@keyframes ps-sweep{from{transform:rotate(-7deg) translateX(-6px)}to{transform:rotate(7deg) translateX(6px)}}
+.p-hug .av-arm-l{animation:ps-hugl 1.4s ease-in-out infinite}
+.p-hug .av-arm-r{animation:ps-hugr 1.4s ease-in-out infinite}
+@keyframes ps-hugl{0%,100%{transform:rotate(-48deg) translate(16px,8px)}50%{transform:rotate(-52deg) translate(17px,6px)}}
+@keyframes ps-hugr{0%,100%{transform:rotate(48deg) translate(-16px,8px)}50%{transform:rotate(52deg) translate(-17px,6px)}}
+.p-hug .av-bot{animation:ps-rock 1.4s ease-in-out infinite}
+.p-plug .av-arm-r{animation:ps-plug .5s ease-in-out infinite}
+@keyframes ps-plug{0%,100%{transform:rotate(38deg) translate(-10px,4px)}50%{transform:rotate(44deg) translate(-15px,9px)}}
+.p-plug .av-arm-l{animation:av-steady 1.1s ease-in-out infinite}
+.p-conduct .av-arm-r{animation:ps-condr .5s ease-in-out infinite alternate}
+.p-conduct .av-arm-l{animation:ps-condl .5s ease-in-out infinite alternate .25s}
+@keyframes ps-condr{from{transform:rotate(-105deg) translate(-4px,-4px)}to{transform:rotate(-150deg) translate(-4px,-8px)}}
+@keyframes ps-condl{from{transform:rotate(105deg) translate(4px,-4px)}to{transform:rotate(140deg) translate(4px,-8px)}}
+.p-conduct .av-head{animation:av-nod .5s ease-in-out infinite}
+.p-dance .av-bot{animation:av-dance .9s ease-in-out infinite}
+.p-dance .av-arm-l{animation:av-cheerl .45s ease-in-out infinite}
+.p-dance .av-arm-r{animation:av-cheerr .45s ease-in-out infinite .22s}
+.p-dance .av-head{animation:av-tilt .45s ease-in-out infinite}
+.p-strum .av-arm-r{animation:ps-strum .2s ease-in-out infinite alternate}
+@keyframes ps-strum{from{transform:rotate(30deg) translate(-12px,2px)}to{transform:rotate(44deg) translate(-12px,10px)}}
+.p-strum .av-arm-l{animation:ps-fret 1.2s ease-in-out infinite}
+@keyframes ps-fret{0%,100%{transform:rotate(-70deg) translate(14px,-2px)}50%{transform:rotate(-76deg) translate(14px,-4px)}}
+.p-strum .av-head{animation:av-nod .4s ease-in-out infinite}
+.p-strum .av-front{transform:rotate(-24deg)}
+
+/* caption under a Shobot that says what it is doing */
+.act-cap{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);max-width:92%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:rgba(27,15,58,.88);border:1px solid rgba(207,194,245,.25);color:#fff;font-size:12px;font-weight:800;padding:3px 10px;border-radius:99px;pointer-events:none;transition:opacity .25s}
+.act-cap:empty{opacity:0}
+.act-cap.swap{animation:capIn .35s cubic-bezier(.3,1.4,.5,1)}
+@keyframes capIn{from{opacity:0;transform:translate(-50%,6px) scale(.9)}to{opacity:1;transform:translate(-50%,0)}}
+@media (prefers-reduced-motion:reduce){.act-cap.swap{animation:none}}
+.facecam{width:92px;height:116px}
+.facecam .shobot{width:80px;height:100px}
+.facecam .act-cap{left:calc(100% + 8px);bottom:6px;transform:none;max-width:min(260px,58vw);font-size:12.5px}
+.facecam .act-cap.swap{animation:capIn2 .35s cubic-bezier(.3,1.4,.5,1)}
+@keyframes capIn2{from{opacity:0;transform:translateX(-8px) scale(.9)}to{opacity:1;transform:none}}
+.me-stage{position:relative}
+.me-stage .act-cap{bottom:10px;font-size:14px;padding:5px 14px}
+.team-goal .shobot{position:relative}
+/* skills gallery (Me page) */
+.skills{display:flex;flex-direction:column;gap:14px;width:100%;margin:6px 0 14px}
+.skill-group h3{font-size:15px;margin:0 0 8px;color:var(--ink2)}
+.skill-list{display:flex;flex-wrap:wrap;gap:6px}
+.skill-list button{display:inline-flex;gap:6px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:6px 12px 6px 8px;font-size:13px;font-weight:700;color:var(--ink);transition:transform .15s,background .15s}
+.skill-list button:hover{background:var(--panel2);transform:translateY(-1px)}
+.skill-list button:active{transform:scale(.95)}
+.skill-list button span{font-size:17px;line-height:1}
+/* saved results in chat history */
+.work.saved .tag{background:var(--purple)}
+.work.saved .live-dot{background:var(--mint);animation:none}
+.saved-ph{position:absolute;inset:0;display:grid;place-items:center;font-size:56px;opacity:.5}
+.work-screen img.frozen{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}

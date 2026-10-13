@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=anim1">
+<link rel="stylesheet" href="styles.css?v=acts1">
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
@@ -75,6 +75,25 @@
         <path d="M96 163 L93 160 M100 162 V158.5 M104 163 L107 160 M96 171 L93 174 M100 172 V175.5 M104 171 L107 174" stroke="#ff4d6d" stroke-width="1.4" stroke-linecap="round"/>
       </g>
     </g>
+    <g class="av-front">
+      <g class="av-piece">
+        <rect class="pc-box" x="82" y="154" width="36" height="34" rx="4"/>
+        <circle class="pc-sphere" cx="100" cy="172" r="19"/>
+        <path class="pc-hemisphere" d="M80 182 A20 20 0 0 1 120 182 Z"/>
+        <rect class="pc-cylinder" x="86" y="150" width="28" height="40" rx="10"/>
+        <path class="pc-cone" d="M100 148 L122 190 H78 Z"/>
+        <path class="pc-wedge" d="M80 190 H120 V152 Z"/>
+        <circle class="pc-torus" cx="100" cy="172" r="15" fill="none" stroke-width="9"/>
+        <path class="pc-gem" d="M100 148 L120 170 L100 194 L80 170 Z"/>
+        <path class="pc-rock" d="M82 186 L80 166 L92 152 L112 154 L122 170 L116 188 Z"/>
+        <rect class="pc-plane" x="70" y="176" width="60" height="10" rx="3"/>
+        <path class="pc-lathe" d="M90 150 H110 Q104 160 114 176 Q118 190 100 192 Q82 190 86 176 Q96 160 90 150 Z"/>
+        <path class="pc-extrude" d="M100 150 l6 13 l14 2 l-10 10 l3 14 l-13 -7 l-13 7 l3 -14 l-10 -10 l14 -2 z"/>
+        <path class="pc-tube" d="M78 186 Q86 150 100 170 T124 152" fill="none" stroke-width="7" stroke-linecap="round"/>
+        <path class="pc-shine" d="M88 160 Q92 155 98 155" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".7"/>
+      </g>
+      <text class="av-front-emoji" x="100" y="194" text-anchor="middle" font-size="42"></text>
+    </g>
     <g class="av-blueprint">
       <rect x="62" y="146" width="76" height="46" rx="3" fill="#2f6fe0"/>
       <rect x="58" y="144" width="8" height="50" rx="4" fill="#1d4fb0"/>
@@ -118,6 +137,7 @@
         <rect x="145" y="189" width="9" height="6" rx="1.5" fill="#c9c2e6"/>
         <path d="M144 195 H155 V201 Q149.5 210 144 201 Z" fill="#e21fd8"/>
       </g>
+      <text class="av-hold" x="149" y="211" text-anchor="middle" font-size="30"></text>
       <g class="av-magnifier">
         <rect x="147" y="168" width="5" height="21" rx="2" fill="#a0672f"/>
         <circle cx="149.5" cy="199" r="7.5" fill="#38bdf8" fill-opacity=".35" stroke="#c9c2e6" stroke-width="3"/>
@@ -142,6 +162,21 @@
         <path d="M50 64 Q52 22 100 20 Q148 22 150 64 Z" fill="#ff8a1f"/>
         <rect x="94" y="22" width="12" height="40" rx="5" fill="#ffb84d"/>
         <rect x="42" y="58" width="116" height="10" rx="5" fill="#ffb84d"/>
+      </g>
+      <g class="av-chef">
+        <path d="M60 60 Q52 38 72 34 Q78 14 100 18 Q122 14 128 34 Q148 38 140 60 Z" fill="#fff"/>
+        <rect x="60" y="54" width="80" height="12" rx="5" fill="#ece6ff"/>
+      </g>
+      <g class="av-grad">
+        <path d="M100 26 L160 44 L100 62 L40 44 Z" fill="#2a1260"/>
+        <path d="M70 52 V64 Q100 76 130 64 V52 L100 62 Z" fill="#3b1d85"/>
+        <path d="M152 46 V70" stroke="#ffd21f" stroke-width="3"/><circle cx="152" cy="72" r="4" fill="#ffd21f"/>
+      </g>
+      <g class="av-wiz">
+        <path d="M60 64 L100 1 L140 64 Z" fill="#6c3cf0"/>
+        <path d="M100 1 L140 64 L118 64 Z" fill="#5726d6"/>
+        <rect x="48" y="58" width="104" height="10" rx="5" fill="#ffd21f"/>
+        <path d="M88 30 l2 5 l5 2 l-5 2 l-2 5 l-2 -5 l-5 -2 l5 -2z M110 44 l1.6 4 l4 1.6 l-4 1.6 l-1.6 4 l-1.6 -4 l-4 -1.6 l4 -1.6z" fill="#ffd21f"/>
       </g>
       <rect x="58" y="66" width="84" height="44" rx="22" fill="#5b2bd6"/>
       <rect x="63" y="70" width="74" height="36" rx="18" fill="#d21ee0"/>
@@ -203,6 +238,10 @@
     <rect x="161" y="44" width="10" height="7" rx="2" fill="#c9c2e6"/>
     <path d="M166 16 V10 M182 22 l5 -4 M150 22 l-5 -4 M186 36 h6 M146 36 h-6" stroke="#ffd21f" stroke-width="3" stroke-linecap="round"/>
   </g>
+  <g class="av-fx" font-size="20" text-anchor="middle">
+    <text x="30" y="72"></text><text x="172" y="60"></text><text x="22" y="138"></text><text x="180" y="132"></text>
+  </g>
+  <line class="av-tape" x1="16" y1="168" x2="184" y2="168" stroke="#ffd21f" stroke-width="5" stroke-dasharray="7 4" stroke-linecap="round"/>
   <g class="av-notes" fill="#fff">
     <text x="22" y="60" font-size="22">♪</text><text x="164" y="44" font-size="26">♫</text>
   </g>
@@ -501,6 +540,7 @@
       <div class="me">
         <div class="me-stage">
           <div class="shobot shobot-big" data-shobot></div>
+          <div class="act-cap" id="meCap"></div>
         </div>
         <h2>Shobot's moves</h2>
         <button type="button" class="btn ghost usage-link" id="meUsageBtn">📊 See how much brain power Shobot used</button>
@@ -516,6 +556,9 @@
           <button data-anim="teleport">✨ Beam in</button>
           <button data-anim="sleep">😴 Sleep</button>
         </div>
+        <h2>Shobot's skills <small class="muted" id="skillCount"></small></h2>
+        <p class="muted small">When Shobot works, it shows the job it is really doing. Tap one to watch it.</p>
+        <div class="skills" id="skills"></div>
         <p class="muted center">Shobot's eyes follow your finger or mouse. If you leave it alone for a while, it falls asleep.</p>
       </div>
     </section>
@@ -599,6 +642,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="js/app.js?v=anim1"></script>
+<script type="module" src="js/app.js?v=acts1"></script>
 </body>
 </html>

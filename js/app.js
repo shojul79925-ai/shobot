@@ -1,4 +1,5 @@
 // Shobot — main app
+import { ACTS, actForPart, actForCode, actForBeat, actForThought, ABILITY_ACT } from './acts.js';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 
@@ -71,7 +72,26 @@ const Look = {
     this.paint(svg);
   },
   paint(svg) {
+    if (svg._state === 'act' && svg._actCls) { svg.setAttribute('class', svg._actCls); return; }
     svg.setAttribute('class', ['av', svg._state, svg._scene && 'sc-' + svg._scene, svg._fx && 'fx-' + svg._fx].filter(Boolean).join(' '));
+  },
+  // Show one activity from ACTS: pose + tool in hand + thing in front + effects + hat.
+  setAct(svg, id, o = {}) {
+    const A = ACTS[id]; if (!A) return;
+    const tool = x => (x && x.startsWith('svg:') ? x.slice(4) : null);
+    const hand = tool(A.hand), front = tool(A.front);
+    svg.querySelector('.av-hold').textContent = A.hand && !hand ? A.hand : '';
+    svg.querySelector('.av-front-emoji').textContent = A.front && !front && A.front !== 'piece' ? A.front : '';
+    const shape = { roundbox: 'box', capsule: 'cylinder', ring: 'torus', pyramid: 'cone' }[o.shape] || o.shape || 'box';
+    svg.querySelectorAll('.av-piece>*').forEach(el => (el.style.display = el.classList.contains('pc-' + shape) || (el.classList.contains('pc-shine') && shape !== 'tube' && shape !== 'torus') ? 'inline' : ''));
+    svg.style.setProperty('--paint', /^#[0-9a-f]{3,8}$/i.test(o.color || '') ? o.color : '#ffd21f');
+    const glyphs = typeof Intl !== 'undefined' && Intl.Segmenter ? [...new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(A.fx || '')].map(x => x.segment) : Array.from(A.fx || '');
+    svg.querySelectorAll('.av-fx text').forEach((t, i) => (t.textContent = glyphs.length ? glyphs[i % glyphs.length] : ''));
+    svg._actCls = ['av', 'act', 'p-' + A.pose, A.hat && 'h-' + A.hat, A.eyes && 'e-' + A.eyes,
+      ...String(A.sp || '').split(',').filter(Boolean).map(x => 's-' + x),
+      hand && 't-' + hand, front && 't-' + front, A.front && 'has-front', A.front === 'piece' && 'pc', glyphs.length && 'has-fx'].filter(Boolean).join(' ');
+    svg._state = 'act'; svg._fx = null; svg._scene = null; svg._next = performance.now() + 1e9;
+    this.paint(svg);
   },
   tick() {
     const now = performance.now();
@@ -89,22 +109,66 @@ const Look = {
   },
   ensure() { if (!this.timer) this.timer = setInterval(() => this.tick(), 300); },
 };
+// Plays activities so each one is seen for a moment.
+// fifo: play them in order (Shobot's thoughts); otherwise the newest wins (fast 3D parts).
+function actPlayer(show, minMs = 1400, fifo = false) {
+  let last = -1e9, shown = null, q = [], t = null, onEmpty = null;
+  const fire = () => { t = null; const n = q.shift(); if (n) { last = performance.now(); shown = n[0]; show(n[0], n[1]); } schedule(); };
+  const schedule = () => {
+    if (t) return;
+    const wait = Math.max(0, minMs - (performance.now() - last));
+    if (q.length) t = setTimeout(fire, wait);
+    else if (onEmpty) { const cb = onEmpty; onEmpty = null; t = setTimeout(() => { t = null; cb(); }, wait); }
+  };
+  const play = (id, o = {}) => {
+    if (!ACTS[id]) return;
+    if (fifo) {
+      const tail = q.length ? q[q.length - 1][0] : shown;
+      if (tail === id) return;
+      q.push([id, o]); if (q.length > 4) q.shift();
+    } else q = [[id, o]];
+    schedule();
+  };
+  play.now = (id, o = {}) => { clearTimeout(t); t = null; q = []; onEmpty = null; last = performance.now(); shown = id; show(id, o); };
+  play.cancel = () => { clearTimeout(t); t = null; q = []; onEmpty = null; shown = null; };
+  play.drain = cb => { onEmpty = cb; schedule(); };
+  return play;
+}
+const actLabel = (id, o = {}) => (ACTS[id]?.label || '').replace('{part}', (o.part || 'part').toString().slice(0, 28));
+function setCap(el, text) {
+  if (!el || el.textContent === text) return;
+  el.textContent = text; el.classList.remove('swap'); void el.offsetWidth; if (text) el.classList.add('swap');
+}
 // A Shobot with its own mood, e.g. the one inside a live work card.
-function ownAvatar(el, start = 'idle') {
+function ownAvatar(el, start = 'idle', cap = null) {
   el.appendChild($('#shobot-tpl').content.cloneNode(true));
   const svg = el.querySelector('svg'); Look.add(svg);
   const me = {
-    svg, base: start, temp: null, t: null,
-    apply() { Look.setState(svg, me.temp || me.base); },
-    set(s) { me.base = s; me.apply(); },
+    svg, base: start, temp: null, t: null, cap, actNow: null,
+    apply() {
+      const s = me.temp || me.base;
+      if (s === 'act' && me.actNow) Look.setAct(svg, me.actNow[0], me.actNow[1]); else Look.setState(svg, s);
+    },
+    set(s) { me.base = s; if (s !== 'act') { me.act.cancel(); setCap(me.cap, ''); } me.apply(); },
     play(s, ms = 2000) { clearTimeout(me.t); me.temp = s; me.apply(); me.t = setTimeout(() => { me.temp = null; me.apply(); }, ms); },
+    // End of a job: show the "done" activity for a moment, then relax.
+    finish(ids, ms = 2600) {
+      ids = [].concat(ids); clearTimeout(me.fin);
+      const step = i => {
+        if (i >= ids.length) { if (me.base === 'act') me.set('idle'); return; }
+        me.act.now(ids[i]); me.fin = setTimeout(() => step(i + 1), i < ids.length - 1 ? 1500 : ms);
+      };
+      step(0);
+    },
   };
+  me.act = actPlayer((id, o) => { me.actNow = [id, o]; me.base = 'act'; clearTimeout(me.t); me.temp = null; setCap(me.cap, actLabel(id, o)); me.apply(); });
   me.apply();
   return me;
 }
 const Avatar = {
   svgs: [], base: 'teleport', temp: null, tempT: null, sleepT: null, jobs: 0, watch: 0,
   init() {
+    this.init2();
     $$('[data-shobot]').forEach(m => this.mount(m));
     setTimeout(() => { if (this.base === 'teleport') this.set('idle'); }, 1500);
     const look = e => {
@@ -126,15 +190,28 @@ const Avatar = {
   mount(el) {
     el.appendChild($('#shobot-tpl').content.cloneNode(true));
     const svg = el.querySelector('svg'); this.svgs.push(svg); Look.add(svg);
-    Look.setState(svg, this.state());
+    svg._watch = el.classList.contains('shobot-mini'); // the little one in the top bar only watches
+    this.paintOne(svg, this.state());
     return svg;
   },
   state() { return this.temp || this.base; },
+  paintOne(svg, s) {
+    if (svg._watch && ['act', 'building', 'coding', 'djing', 'busy'].includes(s)) Look.setState(svg, 'busy');
+    else if (s === 'act' && this.actNow) Look.setAct(svg, this.actNow[0], this.actNow[1]);
+    else Look.setState(svg, s);
+  },
   apply() {
     this.svgs = this.svgs.filter(s => s.isConnected);
-    const s = this.state(); this.svgs.forEach(svg => Look.setState(svg, s));
+    const s = this.state(); this.svgs.forEach(svg => this.paintOne(svg, s));
   },
-  set(s) { this.base = s; this.apply(); },
+  set(s) { this.base = s; if (s !== 'act') { this.act?.cancel(); setCap($('#meCap'), ''); } this.apply(); },
+  // Show one activity for a short time, then go back to what Shobot was doing.
+  show(id, o = {}, ms = 2600) {
+    if (!ACTS[id]) return;
+    this.actNow = [id, o]; setCap($('#meCap'), actLabel(id, o));
+    this.play('act', ms);
+    clearTimeout(this.capT); this.capT = setTimeout(() => { if (this.temp !== 'act') setCap($('#meCap'), ''); }, ms + 50);
+  },
   play(s, ms = 2400) {
     clearTimeout(this.tempT); this.temp = s; this.apply();
     this.tempT = setTimeout(() => { this.temp = null; this.apply(); }, ms);
@@ -149,9 +226,15 @@ const Avatar = {
   },
   endJob(celebrate = true, card) {
     this.jobs = Math.max(0, this.jobs - 1);
-    if (card?.av && card._job) { this.watch = Math.max(0, this.watch - 1); card._job = false; card.av.set('idle'); card.av.play(celebrate ? 'happy' : 'surprised', celebrate ? 2600 : 1400); }
+    if (card?.av && card._job) {
+      this.watch = Math.max(0, this.watch - 1); card._job = false;
+      if (celebrate) card.av.finish(card.doneAct || 'b_done'); else { card.av.set('idle'); card.av.play('surprised', 1400); }
+    }
     if (!this.jobs) { this.set('idle'); if (celebrate) this.play('happy', 1800); }
     else if (!this.watch && this.base === 'busy') this.set('thinking');
+  },
+  init2() {
+    this.act = actPlayer((id, o) => { this.actNow = [id, o]; this.base = 'act'; setCap($('#meCap'), actLabel(id, o)); this.apply(); }, 1100, true);
   },
   poke() {
     if (this.base === 'sleep') { this.set('idle'); this.play('surprised', 900); }
@@ -580,10 +663,12 @@ const curMsgs = () => curChat()?.messages || [];
 function saveChats() {
   chats.sort((a, b) => b.updated - a.updated); chats = chats.slice(0, 40);
   store.set('currentChat', currentId);
-  try { localStorage.setItem('shobot.chats', JSON.stringify(chats)); }
-  catch { // storage full: keep pictures only in the newest chat
-    chats.slice(1).forEach(c => c.messages.forEach(m => delete m.images)); store.set('chats', chats);
-  }
+  const trySave = () => { try { localStorage.setItem('shobot.chats', JSON.stringify(chats)); return true; } catch { return false; } };
+  if (trySave()) return;
+  // Storage full: drop the heaviest old things first, keep the newest chat's work.
+  const old = chats.slice(1), steps = [m => delete m.images, m => delete m.thumb, m => { delete m.parts; delete m.html; delete m.song; }];
+  for (const step of steps) { old.forEach(c => c.messages.forEach(step)); if (trySave()) return; }
+  for (let i = old.length - 1; i >= 0 && !trySave(); i--) chats.pop();
 }
 const msgsEl = $('#messages'), scrollEl = $('#chatScroll'), input = $('#chatInput');
 const nearBottom = () => scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 140;
@@ -603,7 +688,11 @@ function renderChat() {
   requestAnimationFrame(() => requestAnimationFrame(() => msgsEl.classList.remove('instant')));
   const msgs = curMsgs();
   showHero(!msgs.length);
-  msgs.forEach(m => { if (m.role === 'assistant' && !m.card) renderBot(addMsg('bot', ''), m.content); else addMsg(m.card ? 'bot' : m.role, m.content, m.images); });
+  msgs.forEach(m => {
+    if (m.role === 'assistant' && !m.card) renderBot(addMsg('bot', ''), m.content);
+    else if (m.card && (m.parts || m.html || m.song)) savedCard(m);
+    else addMsg(m.card ? 'bot' : m.role, m.content, m.images);
+  });
   $('#chatTitle').textContent = curChat()?.title || 'New chat';
   renderChatList();
 }
@@ -731,7 +820,7 @@ function renderBot(bubble, raw, { live = false } = {}) {
   else if (!steps.length) html += live ? '<span class="typing"><span></span><span></span><span></span></span>' : md('👍');
   bubble.innerHTML = html;
   if (!live) foldLong(bubble);
-  return { text, steps };
+  return { text, steps, thoughts };
 }
 function foldLong(bubble) {
   const a = bubble.querySelector('.answer'); if (!a || a.querySelector('pre')) return;
@@ -750,14 +839,14 @@ function workCard(kind, title) {
   const row = document.createElement('div'); row.className = 'msg bot';
   row.innerHTML = `<div class="bubble wide"><div class="work">
     <div class="work-head"><span class="live-dot"></span><span class="tag">LIVE</span><span>Shobot's screen · ${esc(kind)}</span><span class="work-status">Starting…</span></div>
-    <div class="work-screen"><div class="facecam"><div class="shobot"></div></div></div>
+    <div class="work-screen"><div class="facecam"><div class="shobot"></div><div class="act-cap"></div></div></div>
     <div class="work-progress"><i></i></div>
     <div class="work-note"></div>
     <div class="work-foot"></div></div></div>`;
   msgsEl.appendChild(row); showHero(false); toBottom(true);
   const w = row.querySelector('.work');
   const card = {
-    av: ownAvatar(row.querySelector('.facecam .shobot')),
+    av: ownAvatar(row.querySelector('.facecam .shobot'), 'idle', row.querySelector('.facecam .act-cap')),
     row, el: w, screen: w.querySelector('.work-screen'), foot: w.querySelector('.work-foot'), note: w.querySelector('.work-note'),
     status(t) { w.querySelector('.work-status').textContent = t; },
     progress(f) { w.querySelector('.work-progress i').style.width = Math.max(3, Math.min(100, f * 100)) + '%'; },
@@ -772,6 +861,68 @@ function stopButton(card, ctl) {
   return () => b.remove();
 }
 
+async function saveGLB(parts) {
+  const { THREE, makeMesh } = await import('./model3d.js');
+  const { GLTFExporter } = await import('three/addons/exporters/GLTFExporter.js');
+  const g = new THREE.Group(); parts.forEach(p => g.add(makeMesh(p)));
+  new GLTFExporter().parse(g, r => download('shobot-model.glb', new Blob([r], { type: 'model/gltf-binary' })), () => toast('Export failed'), { binary: true });
+}
+// A small JPEG of the live 3D screen, kept with the chat so the build shows again later.
+function snapThumb(screen) {
+  return new Promise(res => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        const w = 420, h = Math.round(w * img.height / img.width) || 262, c = document.createElement('canvas');
+        c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h);
+        res(c.toDataURL('image/jpeg', 0.72));
+      };
+      img.onerror = () => res(null); img.src = screen.snapshot();
+    } catch { res(null); }
+  });
+}
+// A finished job brought back from chat history: picture, code or beat, with its buttons.
+function savedCard(m) {
+  const card = workCard({ '3d': '3D build', code: 'coding', music: 'music' }[m.card], m.title || '');
+  card.el.classList.add('done', 'saved'); card.el.querySelector('.tag').textContent = 'SAVED';
+  if (m.card === '3d') {
+    card.status(`“${m.title}” · ${m.parts.length} parts`);
+    if (m.thumb) card.screen.insertAdjacentHTML('afterbegin', `<img class="frozen" alt="${esc(m.title)}" src="${m.thumb}">`);
+    else card.screen.insertAdjacentHTML('afterbegin', '<div class="saved-ph">🧊</div>');
+    const view = card.button('▶ View in 3D', async () => {
+      view.remove(); card.screen.querySelector('.frozen,.saved-ph')?.remove();
+      try { const { createLiveScreen } = await import('./livescreen.js'); const sc = createLiveScreen(card.screen); m.parts.forEach(p => sc.add(p)); sc.done(); }
+      catch { toast("I couldn't load my 3D tools. Check the internet."); }
+    }, false);
+    card.button('Open in 3D Studio', async () => { const st = await go('studio3d'); st?.load(m.parts); });
+    card.button('Save .GLB', () => saveGLB(m.parts));
+  } else if (m.card === 'code') {
+    card.status(`${m.html.split('\n').length} lines of code`);
+    card.screen.classList.add('code');
+    const pre = document.createElement('pre'); pre.className = 'live-code'; pre.textContent = m.html.split('\n').slice(0, 24).join('\n'); card.screen.prepend(pre);
+    if (m.note) card.note.textContent = m.note;
+    const play = card.button('▶ Play', () => {
+      play.remove(); pre.remove();
+      const fr = document.createElement('iframe'); fr.title = 'Preview'; fr.setAttribute('sandbox', 'allow-scripts allow-forms'); fr.srcdoc = m.html; card.screen.prepend(fr);
+    }, false);
+    card.button('Open in Code', () => { files = { html: m.html, css: '', js: '' }; loadFile('html'); run(); go('code'); });
+    card.button('Save file', () => download('shobot-project.html', new Blob([m.html], { type: 'text/html' })));
+  } else if (m.card === 'music') {
+    card.status(`“${m.title}” · ${m.song.bpm} BPM`);
+    const grid = document.createElement('div'); grid.className = 'beat'; card.screen.prepend(grid);
+    loadModule('music').then(mu => {
+      const rows = [...mu.DRUMS.map(d => ({ c: d.c, on: i => !!m.song.drums[d.id]?.[i] })), ...mu.NOTES.map((n, ni) => ({ c: '#ffd21f', on: i => m.song.melody[i] === ni }))];
+      grid.style.gridTemplateRows = `repeat(${rows.length},1fr)`;
+      grid.innerHTML = rows.map(r => Array.from({ length: 16 }, (_, i) => `<i class="${r.on(i) ? 'on' : ''}" style="--c:${r.c}"></i>`).join('')).join('');
+      const cells = [...grid.children]; let mine = false;
+      mu.onStep(st => cells.forEach((c, i) => c.classList.toggle('now', mine && i % 16 === st)));
+      const playBtn = card.button('▶ Play', () => { if (!mine || !mu.isPlaying()) { mu.load(m.song); mine = true; } mu.toggle(); }, false);
+      mu.onState(p => { if (!p) mine = mine && false; playBtn.textContent = p && mine ? '⏹ Stop' : '▶ Play'; });
+      card.button('Open in Music', () => { mu.load(m.song); go('music'); });
+    }).catch(() => grid.remove());
+  }
+  return card;
+}
 async function chatBuild3d(desc) {
   const cid = currentId;
   desc = desc || 'a cute robot';
@@ -779,6 +930,7 @@ async function chatBuild3d(desc) {
   const card = workCard('3D build', desc);
   card.status('Getting my tools…');
   Avatar.startJob('building', card);
+  card.doneAct = ['b_check', 'b_done']; card.av.act.now('b_plan');
   const ctl = new AbortController(); const unStop = stopButton(card, ctl);
   let screen, parts = [], planned = 0;
   try {
@@ -787,34 +939,42 @@ async function chatBuild3d(desc) {
     card.status('Planning the model…');
     const res = await gen3d(desc, detail, {
       signal: ctl.signal,
-      onTitle: t => { planned = +t.parts || 0; card.status(`Building “${t.title}”…`); },
+      onTitle: t => { planned = +t.parts || 0; card.status(`Building “${t.title}”…`); card.av.act('b_plan'); },
       onPart: d => {
         parts.push(d); screen.add(d);
+        card.av.act(actForPart(d, parts.length - 1), { part: d.n || d.s, shape: d.s, color: d.c });
         card.status(`Part ${parts.length}${planned ? ' / ~' + planned : ''}${d.n ? ' · ' + d.n : ''}`);
         if (planned) card.progress(parts.length / planned);
       },
     });
     screen.done(); unStop();
     card.done(`Finished “${res.title}” · ${parts.length} parts`);
-    remember('assistant', `🧱 I built **${res.title}** with ${parts.length} parts!`, { card: '3d' }, cid);
+    remember('assistant', `🧱 I built **${res.title}** with ${parts.length} parts!`, { card: '3d', title: res.title, parts, thumb: await snapThumb(screen) }, cid);
     store.set('lastBuild', parts);
     card.button('Open in 3D Studio', async () => { const m = await go('studio3d'); m?.load(parts); }, false);
-    card.button('Save .GLB', async () => {
-      const { THREE, makeMesh } = await import('./model3d.js');
-      const { GLTFExporter } = await import('three/addons/exporters/GLTFExporter.js');
-      const g = new THREE.Group(); parts.forEach(p => g.add(makeMesh(p)));
-      new GLTFExporter().parse(g, r => download('shobot-model.glb', new Blob([r], { type: 'model/gltf-binary' })), () => toast('Export failed'), { binary: true });
-    });
+    card.button('Save .GLB', () => saveGLB(parts));
     Avatar.endJob(true, card); beep('ok');
   } catch (e) {
     console.warn(e); unStop();
-    if (parts.length) { screen?.done(); card.fail(`Stopped at ${parts.length} parts`); card.button('Open in 3D Studio', async () => { const m = await go('studio3d'); m?.load(parts); }, false); }
+    if (parts.length) {
+      screen?.done(); card.fail(`Stopped at ${parts.length} parts`);
+      card.button('Open in 3D Studio', async () => { const m = await go('studio3d'); m?.load(parts); }, false);
+      remember('assistant', `🧱 I stopped building at ${parts.length} parts.`, { card: '3d', title: desc + ' (stopped)', parts, thumb: screen ? await snapThumb(screen) : null }, cid);
+    }
     else { card.fail(e.code ? aiErrorText(e) : "I couldn't load my 3D tools. Check the internet and try again."); screen?.destroy(); }
     Avatar.endJob(false, card); if (e.code !== 'cancelled' && e.code !== 'declined') Avatar.play('surprised', 1400);
   }
   toBottom();
 }
 
+// Picks the coding activity from what Shobot is typing and what step it is on.
+function codeDriver(act) {
+  let fixing = false, last = '';
+  return {
+    status(t) { if (/bug|fix/i.test(t)) { fixing = true; act.now('c_bug'); } else if (/test/i.test(t)) act('c_test'); },
+    code(code) { last = code; act(fixing ? 'c_fix' : actForCode(code)); },
+  };
+}
 async function chatCode(request) {
   const cid = currentId;
   request = request || 'a fun mini game';
@@ -823,13 +983,16 @@ async function chatCode(request) {
   const pre = document.createElement('pre'); pre.className = 'live-code'; card.screen.prepend(pre);
   card.status('Opening my laptop…');
   Avatar.startJob('coding', card);
+  card.doneAct = ['c_save', 'c_done']; card.av.act.now('c_plan');
   const ctl = new AbortController(); const unStop = stopButton(card, ctl);
   let lines = 0;
+  const drive = codeDriver(card.av.act);
   try {
     const { html, note, fixed, remaining } = await genTestedCode(request, {
       signal: ctl.signal,
-      onStatus: t => card.status(t),
+      onStatus: t => { card.status(t); drive.status(t); },
       onCode: code => {
+        drive.code(code);
         const all = code.split('\n'); lines = all.length;
         pre.innerHTML = esc(all.slice(-22).join('\n')) + '<span class="cursor"></span>';
         card.status(`Typing line ${lines}…`); card.progress(Math.min(0.95, lines / 300));
@@ -842,7 +1005,7 @@ async function chatCode(request) {
     fr.srcdoc = buildDoc(); card.screen.prepend(fr);
     card.note.textContent = '🤖 ' + note.slice(0, 300) + (fixed ? `\n🔧 I found and fixed ${fixed.length} bug${fixed.length > 1 ? 's' : ''} by myself.` : '') + (remaining?.length ? '\n⚠️ There may still be a small bug. Ask me to fix it!' : '\n✅ Tested: no errors.');
     card.done(`Done · ${html.split('\n').length} lines of code`);
-    remember('assistant', `⌨️ I coded **${request}**! ${note.slice(0, 200)}`, { card: 'code' }, cid);
+    remember('assistant', `⌨️ I coded **${request}**! ${note.slice(0, 200)}`, { card: 'code', title: request, html, note: card.note.textContent }, cid);
     card.button('Open in Code', () => go('code'), false);
     card.button('Test on devices', () => { $('#testSrc').value = 'code'; go('test'); });
     card.button('Save file', () => download('shobot-project.html', new Blob([buildDoc()], { type: 'text/html' })));
@@ -860,18 +1023,19 @@ async function chatBeat(desc) {
   const card = workCard('music', desc);
   card.status('Putting on my headphones…');
   Avatar.startJob('djing', card);
+  card.doneAct = ['m_mix', 'm_dance']; card.av.act.now('m_compose');
   const grid = document.createElement('div'); grid.className = 'beat'; card.screen.prepend(grid);
   try {
     const m = await loadModule('music');
     let chars = 0;
-    const res = await m.make(desc, { quiet: true, autoplay: false, onText: ({ text }) => { chars = text.length; card.status('Writing notes…'); card.progress(Math.min(0.9, chars / 900)); } });
+    const res = await m.make(desc, { quiet: true, autoplay: false, onText: ({ text }) => { chars = text.length; card.status('Writing notes…'); card.progress(Math.min(0.9, chars / 900)); card.av.act(actForBeat(text)); } });
     const rows = [...m.DRUMS.map(d => ({ c: d.c, on: i => !!res.song.drums[d.id][i] })), ...m.NOTES.map((n, ni) => ({ c: '#ffd21f', on: i => res.song.melody[i] === ni }))];
     grid.style.gridTemplateRows = `repeat(${rows.length},1fr)`;
     grid.innerHTML = rows.map(r => Array.from({ length: 16 }, (_, i) => `<i class="${r.on(i) ? 'on' : ''}" style="--c:${r.c}"></i>`).join('')).join('');
     const cells = [...grid.children];
     const off = m.onStep(s => cells.forEach((c, i) => c.classList.toggle('now', i % 16 === s)));
     card.done(`“${res.title}” · ${res.song.bpm} BPM`);
-    remember('assistant', `🎧 I made a beat: **${res.title}**!`, { card: 'music' }, cid);
+    remember('assistant', `🎧 I made a beat: **${res.title}**!`, { card: 'music', title: res.title, song: res.song }, cid);
     const playBtn = card.button('▶ Play', () => m.toggle(), false);
     m.onState(p => (playBtn.textContent = p ? '⏹ Stop' : '▶ Play'));
     card.button('Open in Music', () => go('music'));
@@ -886,14 +1050,14 @@ async function chatBeat(desc) {
 
 /* ---- Team mode: 3 to 10 helper agents work at the same time ---- */
 const ROLE_EMOJI = { researcher: '🔎', writer: '✍️', coder: '💻', designer: '🎨', builder3d: '🧱', musician: '🎵', teacher: '🧑‍🏫', mathematician: '➗', storyteller: '📖', gamer: '🎮', scientist: '🔬', critic: '🧐', planner: '🗺️', artist: '🖌️', checker: '✅' };
-const ROLE_ANIM = { coder: 'coding', builder3d: 'building', designer: 'building', artist: 'building', musician: 'djing' };
+const ROLE_ANIM = { researcher: 't_read', writer: 't_write', coder: 'c_js', designer: 't_art', builder3d: 'b_hammer', musician: 'm_melody', teacher: 't_school', mathematician: 't_math', storyteller: 't_story', gamer: 't_game', scientist: 't_science', critic: 't_check', planner: 't_plan', artist: 'c_color', checker: 'team_check' };
 const TEAM_HUES = [0, 150, 200, 265, 320, 35, 95, 175, 235, 290];
 const DEFAULT_ROLES = ['researcher', 'writer', 'teacher', 'designer', 'critic', 'scientist', 'storyteller', 'mathematician', 'coder', 'gamer'];
 const BOT_NAMES = ['Zip', 'Bolt', 'Pixel', 'Nova', 'Gizmo', 'Sprocket', 'Echo', 'Byte', 'Comet', 'Widget'];
 function miniBot(el, hue) {
   el.appendChild($('#shobot-tpl').content.cloneNode(true));
-  const svg = el.querySelector('svg'); svg.style.filter = `hue-rotate(${hue}deg)`;
-  const set = st => svg.setAttribute('class', 'av ' + st); set('idle'); return set;
+  const svg = el.querySelector('svg'); svg.style.filter = `hue-rotate(${hue}deg)`; Look.add(svg);
+  const set = st => (ACTS[st] ? Look.setAct(svg, st) : Look.setState(svg, st)); set('idle'); return set;
 }
 async function pool(items, limit, fn) {
   let next = 0;
@@ -933,6 +1097,7 @@ async function chatTeam(task, size = 5, images) {
   const progress = f => (w.querySelector('.work-progress i').style.width = Math.max(4, Math.min(100, f * 100)) + '%');
   const lead = { av: ownAvatar(w.querySelector('.team-leader')) };
   Avatar.startJob('thinking', lead);
+  lead.doneAct = 'b_done'; lead.av.act.now('team_plan');
   const stop = document.createElement('button'); stop.className = 'btn ghost'; stop.textContent = '■ Stop the team'; stop.onclick = () => ctl.abort(); foot.appendChild(stop);
   const ctx = curMsgs().slice(-7, -1).map(m => `${m.role === 'user' ? userName() : 'Shobot'}: ${plain(m.content).slice(0, 400)}`).join('\n');
   progress(0.04);
@@ -969,7 +1134,7 @@ async function chatTeam(task, size = 5, images) {
     await pool(agents, IN_CLAUDE ? 3 : 2, async (a, i) => {
       if (ctl.signal.aborted) return;
       const tile = tiles[i]; const out = tile.el.querySelector('.agent-out');
-      tile.setState('working'); tile.setBot(ROLE_ANIM[a.role] || 'thinking');
+      tile.setState('working'); tile.setBot(ROLE_ANIM[a.role] || 't_think'); lead.av.act('team_lead');
       try {
         a.result = await callRetry('agent', [{ role: 'user', content: `TEAM GOAL: ${goal}\nWHAT ${userName().toUpperCase()} ASKED: ${task}\n\nYOUR JOB: ${a.task}` }], {
           signal: ctl.signal, system: TEAM_PROMPTS.agent(a, size),
@@ -991,7 +1156,7 @@ async function chatTeam(task, size = 5, images) {
     // 3. Checker reviews everything
     const check = w.querySelector('.team-check'); check.hidden = false;
     check.innerHTML = `<div class="agent-top"><div class="agent-bot"></div><div class="agent-info"><b>✅ Checker</b><small>quality control · <span class="agent-state">checking</span></small></div></div><div class="agent-out"></div>`;
-    const setCheck = miniBot(check.querySelector('.agent-bot'), 120); setCheck('thinking');
+    const setCheck = miniBot(check.querySelector('.agent-bot'), 120); setCheck('team_check'); lead.av.act('team_check');
     status('Checker is checking the work…'); toBottom();
     let review = '';
     try {
@@ -1002,7 +1167,7 @@ async function chatTeam(task, size = 5, images) {
     progress(0.85);
 
     // 4. The leader writes the final answer
-    status('Shobot is putting it all together…'); lead.av.set('talking');
+    status('Shobot is putting it all together…'); lead.av.act('team_final');
     const bubble = addMsg('bot', ''); bubble.innerHTML = '<span class="typing"><span></span><span></span><span></span></span>';
     const finalText = await callRetry('final', [{ role: 'user', content: `${userName()} asked: ${task}\nTeam goal: ${goal}\n\n${work}\n\n### Checker's notes\n${review || '(no notes)'}` }], {
       signal: ctl.signal, system: TEAM_PROMPTS.final(), images,
@@ -1089,14 +1254,18 @@ async function sendChat(text, { silent } = {}) {
   }
   const bubble = addMsg('bot', '');
   bubble.innerHTML = '<span class="typing"><span></span><span></span><span></span></span>';
-  if (!Avatar.jobs) Avatar.set('thinking');
+  if (!Avatar.jobs) Avatar.act.now('t_think');
   const msgs = curMsgs().slice(-20);
   const history = msgs.map((m, i) => ({ role: m.role, content: (m.images?.length && i < msgs.length - 1 ? `[${m.images.length} picture(s) were shared here earlier]\n` : '') + m.content }));
   let reply = '';
   try {
     reply = await callAI('chat', history, {
       images: pics.map(p => p.blob),
-      onText: ({ text }) => { const r = renderBot(bubble, text, { live: true }); if (!Avatar.jobs) Avatar.set(r.text ? 'talking' : 'thinking'); bubble.classList.add('streaming'); toBottom(); },
+      onText: ({ text }) => {
+        const r = renderBot(bubble, text, { live: true });
+        if (!Avatar.jobs) { r.thoughts.forEach(x => Avatar.act(actForThought(x))); if (r.text) Avatar.act('t_explain'); }
+        bubble.classList.add('streaming'); toBottom();
+      },
     });
   } catch (e) {
     console.warn(e);
@@ -1108,9 +1277,10 @@ async function sendChat(text, { silent } = {}) {
   renderBot(bubble, reply); toBottom();
   beep('recv');
   chatBusy = false; $('#sendBtn').disabled = false;
-  if (!Avatar.jobs && !silent) {
-    if (!speak(clean)) { Avatar.set('idle'); if (!actions.length) Avatar.play('happy', 1200); }
-  }
+  // Let Shobot finish showing its thoughts, then relax.
+  const relax = happy => () => { if (!Avatar.jobs && Avatar.base === 'act') { Avatar.set('idle'); if (happy && !actions.length) Avatar.play('happy', 1200); } };
+  if (!Avatar.jobs && !silent) { if (!speak(clean)) Avatar.act.drain(relax(true)); }
+  else if (!Avatar.jobs) Avatar.act.drain(relax(false));
   for (const act of actions) runAction(act);
   return clean;
 }
@@ -1245,11 +1415,12 @@ async function codeAsk(text) {
   Avatar.startJob('coding'); $('#codeInput').value = '';
   codeCtl = new AbortController(); $('#codeSend').textContent = '■';
   showPane('editor'); loadFile('html');
+  const drive = codeDriver(Avatar.act); Avatar.act.now('c_plan');
   try {
     const { html, note, fixed, remaining } = await genTestedCode(text, {
       signal: codeCtl.signal,
-      onStatus: t => (wait.textContent = t),
-      onCode: code => { editor.value = code; updateGutter(); editor.scrollTop = editor.scrollHeight; wait.textContent = `Shobot is typing… line ${code.split('\n').length}`; },
+      onStatus: t => { wait.textContent = t; drive.status(t); },
+      onCode: code => { drive.code(code); editor.value = code; updateGutter(); editor.scrollTop = editor.scrollHeight; wait.textContent = `Shobot is typing… line ${code.split('\n').length}`; },
     });
     files = { html, css: '', js: '' }; loadFile('html'); run();
     wait.textContent = '🤖 ' + note.slice(0, 400) + (fixed ? ` 🔧 Fixed ${fixed.length} bug${fixed.length > 1 ? 's' : ''} by myself.` : '') + (remaining?.length ? ' ⚠️ Maybe one bug left: ' + remaining[0] : ' ✅ Tested: no errors.');
@@ -1417,7 +1588,7 @@ async function useAbility(ab, { fromChat } = {}) {
     if (!ok) { sink = card; info('No problem. Shobot did nothing.'); sink = null; return; }
   }
   sink = card;
-  try { await ab.run({ fromChat }); renderCards(); if (!turningOff) Avatar.play('happy', 1400); }
+  try { await ab.run({ fromChat }); renderCards(); if (!turningOff) { const aa = ABILITY_ACT(ab.id); if (aa) Avatar.show(aa, {}, 2800); else Avatar.play('happy', 1400); } }
   catch (e) { console.warn(e); nope((e && e.name === 'NotAllowedError') ? 'Your browser blocked it. You can allow it in your browser settings.' : 'That did not work on this device.'); renderCards(); }
   finally { sink = null; toBottom(); }
   if (ab.id === 'motion' && !motionOn) Avatar.svgs.forEach(s => (s.style.transform = ''));
@@ -1513,7 +1684,22 @@ $('#usageRefresh').addEventListener('click', () => renderUsage(true));
 $('#openUsageBtn').addEventListener('click', () => { $('#settingsModal').hidden = true; go('usage'); });
 $('#meUsageBtn').addEventListener('click', () => go('usage'));
 
-/* ---------------- ME (avatar moves) ---------------- */
+/* ---------------- ME (avatar moves + every skill) ---------------- */
+(function buildSkills() {
+  const groups = [['b_', '🧊 Building 3D'], ['c_', '⌨️ Coding'], ['m_', '🎧 Music'], ['t_', '💭 Thinking'], ['team_', '👥 Team'], ['p_', '📱 Phone helpers']];
+  const icon = A => [A.hand, A.front, A.fx].find(x => x && !x.startsWith('svg:') && x !== 'piece')?.match(/\p{Extended_Pictographic}\uFE0F?/u)?.[0]
+    || { 'svg:hammer': '🔨', 'svg:torch': '🔥', 'svg:wrench': '🔧', 'svg:brush': '🖌️', 'svg:magnifier': '🔍', 'svg:laptop': '💻', 'svg:blueprint': '📐', 'svg:deck': '🎛️', 'svg:bug': '🐞' }[A.hand || A.front] || '🧱';
+  const ids = Object.keys(ACTS);
+  $('#skillCount').textContent = `· ${ids.length}`;
+  const shapes = ['box', 'sphere', 'cylinder', 'cone', 'torus', 'gem', 'lathe', 'extrude'];
+  $('#skills').innerHTML = groups.map(([pre, title]) => `<div class="skill-group"><h3>${title}</h3><div class="skill-list">${ids.filter(id => id.startsWith(pre) && !(pre === 't_' && id.startsWith('team_'))).map(id => `<button type="button" data-act="${id}"><span>${icon(ACTS[id])}</span>${esc(actLabel(id, { part: 'rocket' }))}</button>`).join('')}</div></div>`).join('');
+  $('#skills').addEventListener('click', e => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const id = b.dataset.act, i = ids.indexOf(id);
+    Avatar.show(id, { part: 'rocket', shape: shapes[i % shapes.length], color: PALETTE[i % PALETTE.length] }, 4000);
+    $('.me-stage').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+})();
 $$('#moves button').forEach(b => b.addEventListener('click', () => {
   const a = b.dataset.anim;
   if (a === 'idle') { Avatar.temp = null; Avatar.set('idle'); return; }
@@ -1555,7 +1741,8 @@ $('#clearChatBtn').addEventListener('click', () => { $('#settingsModal').hidden 
 $('#installTip').addEventListener('click', () => ($('#installText').hidden = false));
 
 /* ---------------- shared API for modules ---------------- */
-const api = { Avatar, callAI, gen3d, toast, beep, download, extractJSON, store, audioCtx, go, confetti };
+window.ShobotDebug = { Look, ACTS, ownAvatar, actPlayer }; // handy for testing animations
+const api = { Avatar, callAI, gen3d, toast, beep, download, extractJSON, store, audioCtx, go, confetti, actForBeat };
 window.Shobot = api;
 
 /* ---------------- boot ---------------- */
