@@ -208,7 +208,11 @@ async function callAI(mode, messages, { onText, signal, images, system: customSy
     method: 'POST', headers: { 'content-type': 'application/json' }, signal,
     body: JSON.stringify({ mode, system, brain: settings.brain, messages: pics ? await withImages(messages, pics) : messages }),
   }).catch(e => { const err = new Error('offline'); err.code = e.name === 'AbortError' ? 'cancelled' : 'offline'; throw err; });
-  if (!r.ok || !r.body) { setAiStatus(false); const j = await r.json().catch(() => ({})); const err = new Error(j.error || 'HTTP ' + r.status); err.code = r.status === 429 ? 'rate_limited' : 'upstream_error'; throw err; }
+  if (!r.ok || !r.body) {
+    const j = await r.json().catch(() => ({})); const err = new Error(j.error || 'HTTP ' + r.status);
+    err.code = r.status === 429 ? 'rate_limited' : 'upstream_error'; err.retryAfter = +j.retryAfter || 0;
+    setAiStatus(false, r.status === 429 ? 'resting a moment · busy brain' : undefined); throw err;
+  }
   setAiStatus(true);
   const reader = r.body.getReader(), dec = new TextDecoder(); let text = '';
   try {
@@ -754,7 +758,10 @@ async function callRetry(mode, msgs, opts = {}, onWait) {
   for (let t = 0; ; t++) {
     try { return await callAI(mode, msgs, opts); }
     catch (e) {
-      if (e.code === 'rate_limited' && t < 3 && !opts.signal?.aborted) { onWait?.(t); await new Promise(r => setTimeout(r, 5000 * (t + 1))); continue; }
+      if (e.code === 'rate_limited' && t < 4 && !opts.signal?.aborted) {
+        const sec = Math.min(60, e.retryAfter || 6 * (t + 1)); onWait?.(t, sec);
+        await new Promise(r => setTimeout(r, sec * 1000)); continue;
+      }
       throw e;
     }
   }
@@ -787,7 +794,7 @@ async function chatTeam(task, size = 5, images) {
     let plan = null;
     try {
       const txt = await callRetry('plan', [{ role: 'user', content: `${ctx ? 'Recent chat, for context:\n' + ctx + '\n\n' : ''}TASK: ${task}\nNUMBER OF AGENTS: ${size}` }],
-        { signal: ctl.signal, system: TEAM_PROMPTS.plan(size), images }, () => status('Waiting for a free brain…'));
+        { signal: ctl.signal, system: TEAM_PROMPTS.plan(size), images }, (t, sec) => status(`Brain is busy, waiting ${sec}s…`));
       plan = extractJSON(txt);
     } catch (e) { if (e.code === 'cancelled' || ctl.signal.aborted) throw e; if (e.code && e.code !== 'upstream_error' && e.code !== 'empty_completion') throw e; }
     const agents = (Array.isArray(plan?.agents) ? plan.agents : []).slice(0, size).map((a, i) => ({
@@ -812,7 +819,7 @@ async function chatTeam(task, size = 5, images) {
     });
     toBottom();
     let finished = 0;
-    await pool(agents, 3, async (a, i) => {
+    await pool(agents, IN_CLAUDE ? 3 : 2, async (a, i) => {
       if (ctl.signal.aborted) return;
       const tile = tiles[i]; const out = tile.el.querySelector('.agent-out');
       tile.setState('working'); tile.setBot(ROLE_ANIM[a.role] || 'thinking');
@@ -820,7 +827,7 @@ async function chatTeam(task, size = 5, images) {
         a.result = await callRetry('agent', [{ role: 'user', content: `TEAM GOAL: ${goal}\nWHAT ${userName().toUpperCase()} ASKED: ${task}\n\nYOUR JOB: ${a.task}` }], {
           signal: ctl.signal, system: TEAM_PROMPTS.agent(a, size),
           onText: ({ text }) => { if (!tile.el.classList.contains('open')) out.textContent = plain(text).slice(-260); },
-        }, () => tile.setState('waiting for a brain'));
+        }, (t, sec) => tile.setState(`resting ${sec}s`));
         tile.setState('done'); tile.setBot('happy'); setTimeout(() => tile.setBot('idle'), 1800);
         if (!tile.el.classList.contains('open')) out.textContent = plain(a.result).slice(0, 260);
       } catch (e) {

@@ -14,10 +14,15 @@ const GW_MODELS = {
   smart: { chat: [SONNET, HAIKU], music: [HAIKU], code: [SONNET, HAIKU], '3d': [SONNET, HAIKU], plan: [SONNET, HAIKU], agent: [HAIKU], review: [SONNET, HAIKU], final: [SONNET, HAIKU] },
   genius: { chat: [OPUS, SONNET], music: [SONNET, HAIKU], code: [OPUS, SONNET], '3d': [OPUS, SONNET], plan: [OPUS, SONNET], agent: [SONNET, HAIKU], review: [OPUS, SONNET], final: [OPUS, SONNET] },
 };
+// Each model has its own free-tier limit, so when one is busy Shobot tries the next.
 const GEMINI_MODELS = {
-  fast: ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-2.5-flash'],
-  smart: ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-2.5-flash'],
-  genius: ['gemini-3.8-pro', 'gemini-3-pro', 'gemini-2.5-pro', 'gemini-3.8-flash'],
+  fast: ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-3.6-flash'],
+  smart: ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'],
+  genius: ['gemini-3-pro', 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'],
+};
+const retrySeconds = j => {
+  const d = (j?.error?.details || []).find(x => x.retryDelay)?.retryDelay;
+  return d ? Math.min(90, Math.ceil(parseFloat(d))) : 0;
 };
 const MAX_TOKENS = { chat: 1500, music: 1500, code: 16000, '3d': 24000, plan: 2500, agent: 3500, review: 2000, final: 5000 };
 const IMG_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
@@ -121,10 +126,12 @@ async function streamGemini(key, mode, system, messages, write, brain = 'smart',
     // In chat, let Gemini look things up on Google so answers about today's world are right.
     const canSearch = mode === 'chat' || mode === 'agent';
     let r = await geminiRequest(key, model, mode, system, messages, true, canSearch);
-    if (!r.ok && canSearch && (r.status === 400 || r.status === 429)) r = await geminiRequest(key, model, mode, system, messages, true, false);
+    if (!r.ok && canSearch && r.status === 400) r = await geminiRequest(key, model, mode, system, messages, true, false);
     if (!r.ok || !r.body) {
       const j = await r.json().catch(() => ({}));
-      lastErr = j?.error?.message || `gemini ${r.status}`; info.status = r.status; info.model = model; (info.tries ||= []).push(`${model}: ${r.status} ${lastErr.slice(0, 120)}`);
+      lastErr = j?.error?.message || `gemini ${r.status}`; info.model = model; (info.tries ||= []).push(`${model}: ${r.status} ${lastErr.slice(0, 120)}`);
+      if (r.status === 429) { info.busy = true; info.retryAfter = Math.max(info.retryAfter || 0, retrySeconds(j)); }
+      if (r.status !== 404) info.status = r.status;
       if ([400, 401, 403].includes(r.status) && !/model/i.test(lastErr)) break; // bad key: stop
       continue; // model missing or busy: try the next one
     }
@@ -191,7 +198,11 @@ module.exports = async (req, res) => {
     if (started) { res.write('\n[[error:connection dropped]]'); return res.end(); }
     err = e.message || 'AI error';
   }
-  if (err && !started) { console.error('AI error', mode, brain, info, err); return res.status(info.status === 429 ? 429 : 502).json({ error: err }); }
+  if (err && !started) {
+    console.error('AI error', mode, brain, info, err);
+    if (info.busy || info.status === 429) return res.status(429).json({ error: 'Shobot\'s brain is busy. Try again soon.', retryAfter: info.retryAfter || 20 });
+    return res.status(502).json({ error: err });
+  }
   if (!started) write('');
   return res.end();
 };
